@@ -16,7 +16,7 @@ from config import (
     BASE_MODEL_NAME, STYLE_CARDS_PATH, ADAPTERS_DIR, DEVICE,
     LORA_R, LORA_ALPHA, LORA_DROPOUT, LORA_TARGET_MODULES,
     TRAIN_EPOCHS, TRAIN_BATCH_SIZE, LEARNING_RATE, MAX_SEQ_LENGTH,
-    PROJECT_ROOT,
+    PROJECT_ROOT, TRAINING_DATA_DIR,
 )
 
 
@@ -93,6 +93,25 @@ def format_chat(prompt, answer):
     )
 
 
+def load_curated_data(style_card):
+    """Load curated training data from JSONL files in data/training/."""
+    style_id = style_card["id"]
+    data_path = TRAINING_DATA_DIR / f"{style_id}.jsonl"
+
+    if not data_path.exists():
+        return None
+
+    examples = []
+    with open(data_path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                examples.append(json.loads(line))
+
+    print(f"  Loaded {len(examples)} curated examples from {data_path}")
+    return examples
+
+
 def generate_synthetic_data(style_card, tokenizer, model):
     """Generate synthetic training data for a style using the base model."""
     examples = []
@@ -147,8 +166,11 @@ def train_single_adapter(style_card, base_model, tokenizer):
     print(f"Training adapter: {style_id}")
     print(f"{'='*60}")
 
-    # Generate synthetic training data
-    examples = generate_synthetic_data(style_card, tokenizer, base_model)
+    # Load curated data first, fall back to synthetic generation
+    examples = load_curated_data(style_card)
+    if examples is None:
+        print(f"  No curated dataset found, falling back to synthetic generation...")
+        examples = generate_synthetic_data(style_card, tokenizer, base_model)
 
     # Save training data for reproducibility
     with open(adapter_path / "training_data.json", "w") as f:

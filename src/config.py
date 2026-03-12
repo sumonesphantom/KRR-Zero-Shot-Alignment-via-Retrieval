@@ -12,6 +12,7 @@ STYLE_BANK_DIR = PROJECT_ROOT / "style_bank"
 STYLE_CARDS_PATH = STYLE_BANK_DIR / "style_cards.jsonl"
 ADAPTERS_DIR = STYLE_BANK_DIR / "adapters"
 INDEX_DIR = PROJECT_ROOT / "data"
+TRAINING_DATA_DIR = PROJECT_ROOT / "data" / "training"
 RESULTS_DIR = PROJECT_ROOT / "results"
 
 # Model settings
