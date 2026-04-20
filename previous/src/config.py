@@ -4,8 +4,8 @@ import os
 import torch
 from pathlib import Path
 
-# Project root
-PROJECT_ROOT = Path(__file__).parent.parent
+# Project root (repo root — two levels above previous/src/)
+PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 # Paths
 STYLE_BANK_DIR = PROJECT_ROOT / "style_bank"

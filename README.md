@@ -36,25 +36,90 @@ User Preference Query ──► Embedding Model ──► FAISS Index ──► 
 | Adaptation | LoRA adapters (PEFT) | Lightweight style modules composed onto base model |
 | Evaluation | Heuristic + LLM-as-judge scoring | Measures retrieval accuracy, style adherence, and win rates |
 
+## 3-LLM Architecture (Knowledge / Style / Judge)
+
+The 3-LLM pipeline in `judge/` decomposes the single-model path into three role-specialized LLMs plus a feedback loop, so generation, stylization, and quality gating no longer compete inside one model.
+
+```mermaid
+flowchart TD
+    U[User Preference + Query] --> EMB[MiniLM Embedding]
+    EMB --> FAISS[FAISS Style Index]
+    FAISS --> TOPK[Top-K Style Cards]
+
+    U --> K[Knowledge LLM<br/>base, no adapter<br/>factual draft]
+    K --> DRAFT[Draft]
+
+    TOPK --> S[Style LLM<br/>base + retrieved LoRA<br/>rewrites draft]
+    DRAFT --> S
+    S --> STYLED[Styled Answer]
+
+    STYLED --> J{Judge LLM<br/>JSON verdict + cosine}
+    DRAFT --> J
+    TOPK --> J
+
+    J -->|accept| OUT[Final Response]
+    J -->|revise_style| S
+    J -->|content_drift| S
+    J -->|wrong_style: next top-K| S
+```
+
+| Role | Model | Input | Output |
+|---|---|---|---|
+| Knowledge LLM | Base, adapter disabled | User query | Neutral factual draft |
+| Style LLM | Base + retrieved LoRA | Draft + style card + preference | Rewritten answer in target style |
+| Judge LLM | Base (or a larger model), adapter disabled | Draft + styled + style card | `JudgeVerdict(style_score, content_faithful, content_cosine, action, rationale)` |
+
+The orchestrator caps the loop at `MAX_REVISIONS=2`, tracks a best-so-far candidate, and always emits something. Content preservation is measured with cosine similarity between sentence embeddings of the draft and the styled answer, independent of the judge's LLM call, to catch hallucinations that the judge might miss. All intermediate steps (every attempt, every verdict) are persisted to `results/traces/`.
+
+See `TODO.md` for the full rollout plan, research references (ZeroStylus 2025, CollabEval 2025, MAJ-EVAL 2025, LoRAHub, Self-RAG), and success criteria.
+
+## Two pipelines in this repo
+
+The project now ships two pipelines side by side that share the same style bank, FAISS index, and LoRA adapters:
+
+| Pipeline | Location | What it is |
+|---|---|---|
+| **Single-LLM (baseline)** | `previous/` | Original pipeline: retrieve style → base model + LoRA → response |
+| **3-LLM (Knowledge / Style / Judge)** | `judge/` | Decouples roles: a Knowledge LLM drafts factual content, a Style LLM rewrites it with the retrieved LoRA, and a Judge LLM evaluates and drives a bounded revision loop |
+
+The 3-LLM pipeline is motivated by the weak style-transfer results of the baseline (win rate 4/20 on TinyLlama 1.1B) and by recent multi-agent-as-judge work (CollabEval 2025, MAJ-EVAL 2025) and content/style decoupling (ZeroStylus 2025). See `TODO.md` for the full plan and mermaid flow.
+
 ## Project Structure
 
 ```
-├── run_pipeline.py              # Main entry point for all pipeline steps
-├── requirements.txt             # Python dependencies
-├── style_bank/
-│   ├── style_cards.jsonl        # 10 style definitions with examples
-│   └── adapters/                # Trained LoRA weights (created during training)
-├── src/
-│   ├── config.py                # Shared configuration (model, paths, hyperparameters)
-│   ├── build_index.py           # Builds FAISS index from style cards
-│   ├── retrieve.py              # Retrieves top-k styles via embedding similarity
-│   ├── train_adapters.py        # Trains LoRA adapters for each style
-│   ├── generate.py              # Generates responses with retrieved adapters
-│   └── evaluate.py              # Evaluation: retrieval accuracy, style adherence, win rates
+├── previous/                    # Single-LLM pipeline (baseline)
+│   ├── run_pipeline.py          #   entry point: --step {index,train,evaluate,demo}
+│   └── src/
+│       ├── config.py            #   shared config (paths point to repo root)
+│       ├── build_index.py       #   builds FAISS index from style cards
+│       ├── retrieve.py          #   top-k style retrieval
+│       ├── train_adapters.py    #   trains LoRA adapters (one per style)
+│       ├── generate.py          #   base + LoRA generation
+│       └── evaluate.py          #   retrieval accuracy, adherence, win rates
+│
+├── judge/                       # 3-LLM pipeline (Knowledge / Style / Judge)
+│   ├── run_pipeline.py          #   entry point: --step {evaluate,demo}
+│   ├── config.py                #   shared config + orchestrator thresholds
+│   ├── retrieve.py              #   style retrieval (+ .embed() for the judge)
+│   ├── eval_data.py             #   eval set + heuristic scorer
+│   ├── evaluate.py              #   3-LLM eval, writes results + traces
+│   └── agents/
+│       ├── schemas.py           #   JudgeVerdict, RevisionStep, PipelineTrace
+│       ├── shared_model.py      #   one loaded base model shared across all 3 roles
+│       ├── knowledge.py         #   Knowledge LLM (no adapter, neutral draft)
+│       ├── style.py             #   Style LLM (base + retrieved LoRA, rewrites the draft)
+│       ├── judge.py             #   Judge LLM (JSON verdict + embedding cosine)
+│       └── orchestrator.py      #   accept / revise_style / content_drift / wrong_style loop
+│
+├── style_bank/                  # Shared by both pipelines
+│   ├── style_cards.jsonl        #   10 style definitions with examples
+│   └── adapters/                #   Trained LoRA weights
 ├── data/
-│   ├── training/                # Curated JSONL datasets (20 examples per style)
-│   └── ...                      # FAISS index and metadata (created during indexing)
-└── results/                     # Evaluation results (created during evaluation)
+│   ├── training/                #   Curated JSONL datasets (20 examples per style)
+│   └── ...                      #   FAISS index and metadata
+├── results/                     # Evaluation results and per-request judge traces
+├── TODO.md                      # 3-LLM architecture plan with mermaid diagrams
+└── requirements.txt
 ```
 
 ## Setup
@@ -75,38 +140,48 @@ pip install -r requirements.txt
 
 ## Usage
 
-### Run the Full Pipeline
+The 3-LLM pipeline reuses the FAISS index and LoRA adapters built by the single-LLM pipeline, so run the baseline's `index` + `train` steps first.
+
+### 1. Build shared artifacts (index + adapters)
 
 ```bash
-python run_pipeline.py --step all
+# Build the FAISS retrieval index from style cards
+python previous/run_pipeline.py --step index
+
+# Train LoRA adapters for all 10 styles
+python previous/run_pipeline.py --step train
 ```
 
-This runs all three steps sequentially: index building, adapter training, and evaluation.
-
-### Run Individual Steps
+### 2a. Single-LLM baseline (retrieve → base + LoRA → respond)
 
 ```bash
-# Step 1: Build the FAISS retrieval index from style cards
-python run_pipeline.py --step index
+# End-to-end
+python previous/run_pipeline.py --step all
 
-# Step 2: Train LoRA adapters for all 10 styles
-python run_pipeline.py --step train
+# Evaluation only
+python previous/run_pipeline.py --step evaluate
+python previous/run_pipeline.py --step evaluate --llm-judge   # adds LLM-as-judge scoring
 
-# Step 3: Run the evaluation suite
-python run_pipeline.py --step evaluate
-
-# Optional: Add LLM-as-judge scoring (slower but more nuanced)
-python run_pipeline.py --step evaluate --llm-judge
-
-# Interactive demo: enter your own preferences and questions
-python run_pipeline.py --step demo
+# Interactive demo
+python previous/run_pipeline.py --step demo
 ```
 
-### Interactive Demo
+### 2b. 3-LLM pipeline (Knowledge / Style / Judge)
 
 ```bash
-python run_pipeline.py --step demo
+# Run the 3-LLM evaluation (uses the same 20-prompt set as the baseline)
+python judge/run_pipeline.py --step evaluate
+
+# Interactive demo — shows draft, each style attempt, and each judge verdict
+python judge/run_pipeline.py --step demo
 ```
+
+Outputs:
+- `results/evaluation_results.json` — baseline (single-LLM) report
+- `results/evaluation_results_3llm.json` — 3-LLM summary (content cosine, revision count, judge style score, win rate vs base)
+- `results/traces/trace_NN.json` — full per-request trace: retrieval, draft, every style attempt, every judge verdict
+
+### Interactive Demo (single-LLM)
 
 ```
 Your preference: explain things simply with fun analogies
