@@ -1,11 +1,8 @@
-"""Evaluation for the 3-LLM pipeline.
+"""Evaluation for the 3-LLM pipeline (Ollama backend).
 
-Reuses the 20-prompt EVAL_DATASET from the single-LLM evaluator and the
-same heuristic style-adherence scorer, then adds:
-  - content preservation (embedding cosine between draft and final_output)
-  - revision count (how often the judge triggered a retry)
-  - judge-reported style_score
-and compares three_llm final outputs against the base model.
+Runs the orchestrator on the 20-prompt eval set, scores outputs with the
+heuristic scorer, and compares against a base-model baseline generated
+directly via Ollama (same model as Knowledge/Style, no style card, no judge).
 """
 
 import json
@@ -14,7 +11,8 @@ from pathlib import Path
 
 from eval_data import EVAL_DATASET, keyword_style_scorer
 from agents.orchestrator import Orchestrator
-from config import RESULTS_DIR, TRACES_DIR
+from agents.ollama_client import OllamaClient
+from config import RESULTS_DIR, TRACES_DIR, STYLE_MODEL
 
 
 def run_three_llm_evaluation():
@@ -22,14 +20,8 @@ def run_three_llm_evaluation():
     TRACES_DIR.mkdir(parents=True, exist_ok=True)
 
     orch = Orchestrator()
-
-    # Also keep a handle to the shared model for a no-adapter "base" baseline.
-    def base_generate(prompt: str) -> str:
-        model = orch.shared.model_without_adapter()
-        if hasattr(model, "disable_adapter"):
-            with model.disable_adapter():
-                return orch.shared.generate(model, prompt, temperature=0.7)
-        return orch.shared.generate(model, prompt, temperature=0.7)
+    # Baseline: same underlying Ollama model as Style, but no style card and no judge.
+    baseline = OllamaClient(STYLE_MODEL)
 
     per_item = []
     wins_3llm_vs_base = 0
@@ -37,11 +29,8 @@ def run_three_llm_evaluation():
     for i, item in enumerate(EVAL_DATASET):
         print(f"\n[{i+1}/{len(EVAL_DATASET)}] {item['prompt'][:60]}")
 
-        # 3-LLM pipeline
         trace = orch.run(item["prompt"], item["preference"], top_k=3)
-
-        # Base-model baseline (same query, no adapter)
-        base_out = base_generate(item["prompt"])
+        base_out = baseline.generate(prompt=item["prompt"], temperature=0.7)
 
         expected_card = orch.retriever.cards.get(item["expected_style"])
         three_llm_score = keyword_style_scorer(trace.final_output, expected_card)["overall"]
@@ -50,7 +39,6 @@ def run_three_llm_evaluation():
         if three_llm_score > base_score:
             wins_3llm_vs_base += 1
 
-        # Persist trace.
         trace_path = TRACES_DIR / f"trace_{i:02d}.json"
         with open(trace_path, "w") as f:
             json.dump(trace.to_dict(), f, indent=2, default=str)

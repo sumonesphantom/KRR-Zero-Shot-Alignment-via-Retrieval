@@ -10,3 +10,4 @@ tqdm
 numpy
 pandas
 scikit-learn
+ollama>=0.3.0

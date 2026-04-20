@@ -1,15 +1,33 @@
-"""Style LLM — rewrites the Knowledge draft in the target style.
+"""Style LLM — rewrites the Knowledge draft in the target style via Ollama.
 
-Uses the shared base model with the retrieved LoRA adapter attached.
-Following ZeroStylus (2025), rewriting an existing draft is an easier
-task than cold styled generation and preserves content better.
+Current implementation: STYLE_MODE="prompt". The *retrieval* mechanism is still
+central — FAISS picks the best Style Card for the user's preference — but the
+retrieved card is injected into the prompt (instruction + few-shot examples)
+rather than loaded as a LoRA adapter. This is because:
+
+  1. The existing LoRA adapters were trained on TinyLlama-1.1B; their weights
+     do not transfer to Llama 3.1 8B or Mistral 7B.
+  2. Ollama applies LoRA via GGUF-format adapters (Modelfile `ADAPTER`
+     directive), not HF/PEFT format.
+
+To restore the LoRA-retrieval path ("lora" mode), adapters must be retrained
+on the new base model and converted to GGUF. Tracked in TODO.md.
 """
 
-from agents.shared_model import SharedBaseModel
+from agents.ollama_client import OllamaClient
+from config import STYLE_MODEL, STYLE_MODE
 
 
-def _rewrite_prompt(draft: str, style_card: dict, preference: str,
-                    strength_hint: str = "") -> str:
+STYLE_SYSTEM = (
+    "You are a rewriter. You receive a DRAFT answer and a target STYLE. "
+    "Rewrite the DRAFT in the STYLE, preserving every fact. "
+    "Do not add new claims. Do not drop key facts. Change only tone, vocabulary, and structure. "
+    "Output ONLY the rewritten answer — no preamble, no meta commentary."
+)
+
+
+def _user_prompt(draft: str, style_card: dict, preference: str,
+                 strength_hint: str = "") -> str:
     examples = style_card.get("examples", [])[:2]
     example_block = ""
     for ex in examples:
@@ -18,38 +36,45 @@ def _rewrite_prompt(draft: str, style_card: dict, preference: str,
 
     tags = ", ".join(style_card.get("tags", []))
     return (
-        "You are a rewriter. Rewrite the DRAFT below in the requested STYLE.\n"
-        "Rules:\n"
-        " 1. Preserve every fact in the DRAFT — do not add new claims or drop facts.\n"
-        " 2. Change only tone, vocabulary, and structure to match the style.\n"
-        " 3. Produce ONLY the rewritten answer — no preamble, no meta commentary.\n"
-        f"{strength_hint}\n\n"
         f"USER PREFERENCE: {preference}\n"
         f"STYLE INSTRUCTION: {style_card['instruction']}\n"
         f"STYLE TAGS: {tags}\n"
         f"{example_block}\n"
+        f"{strength_hint}\n"
         f"DRAFT:\n{draft}\n\n"
         "REWRITTEN ANSWER:"
     )
 
 
 class StyleLLM:
-    def __init__(self, shared: SharedBaseModel):
-        self.shared = shared
+    def __init__(self, client: OllamaClient | None = None):
+        if STYLE_MODE != "prompt":
+            raise NotImplementedError(
+                f"STYLE_MODE={STYLE_MODE!r} not supported. "
+                "Ollama LoRA support requires GGUF-converted adapters; see TODO.md."
+            )
+        self.client = client or OllamaClient(STYLE_MODEL)
 
     def restyle(self, draft: str, style_card: dict, preference: str,
                 attempt: int = 0) -> str:
-        # On retries, tighten the rewrite directive.
-        hint = ""
-        temperature = 0.7
-        if attempt == 1:
-            hint = " 4. The previous attempt did not match the style clearly enough. Commit harder to the style markers (vocabulary, structure, punctuation) from the examples."
+        if attempt == 0:
+            hint, temperature = "", 0.7
+        elif attempt == 1:
+            hint = (
+                "NOTE: The previous attempt did not match the style clearly enough. "
+                "Commit harder to the style markers (vocabulary, structure, "
+                "punctuation) seen in the examples."
+            )
             temperature = 0.5
-        elif attempt >= 2:
-            hint = " 4. Match the style in the examples almost literally. Mirror their sentence structure and characteristic phrases."
+        else:
+            hint = (
+                "NOTE: Match the style of the examples almost literally. "
+                "Mirror their sentence structure and characteristic phrases."
+            )
             temperature = 0.35
 
-        prompt = _rewrite_prompt(draft, style_card, preference, hint)
-        self.shared.ensure_adapter(style_card["adapter_path"])
-        model = self.shared.model_with_adapter()
-        return self.shared.generate(model, prompt, temperature=temperature)
+        return self.client.generate(
+            prompt=_user_prompt(draft, style_card, preference, hint),
+            system=STYLE_SYSTEM,
+            temperature=temperature,
+        )

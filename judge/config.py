@@ -1,10 +1,14 @@
 """Shared configuration for the 3-LLM (Knowledge / Style / Judge) pipeline.
 
-Paths point to the repo root so style_bank/, data/, and results/ are shared
-with the single-LLM pipeline in previous/.
+Inference runs through Ollama. Make sure the models below are pulled:
+
+    ollama pull llama3.1:8b-instruct-q4_K_M
+    ollama pull mistral:7b-instruct-q4_K_M
+
+The sentence-transformers embedder still runs locally for FAISS retrieval and
+for the judge's content-preservation cosine.
 """
 
-import torch
 from pathlib import Path
 
 # Repo root — one level above judge/
@@ -19,22 +23,19 @@ TRAINING_DATA_DIR = PROJECT_ROOT / "data" / "training"
 RESULTS_DIR = PROJECT_ROOT / "results"
 TRACES_DIR = RESULTS_DIR / "traces"
 
-# Models
-BASE_MODEL_NAME = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+# Ollama
+OLLAMA_HOST = "http://localhost:11434"
+
+# Per-role models (Ollama tags).
+# Knowledge and Style use Llama 3.1 8B — strong instruction following, good at
+# faithful rewriting. Judge uses Mistral 7B — different family from the
+# generator, which reduces self-preference bias (Zheng et al. 2023).
+KNOWLEDGE_MODEL = "llama3.1:8b-instruct-q4_K_M"
+STYLE_MODEL = "llama3.1:8b-instruct-q4_K_M"
+JUDGE_MODEL = "mistral:7b-instruct-q4_K_M"
+
+# Embedding model for FAISS retrieval + judge content cosine.
 EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
-# If set, judge uses a separate, stronger model. None = reuse BASE_MODEL_NAME.
-JUDGE_MODEL_NAME = None
-
-
-def get_device():
-    if torch.cuda.is_available():
-        return "cuda"
-    if torch.backends.mps.is_available():
-        return "mps"
-    return "cpu"
-
-
-DEVICE = get_device()
 
 # Retrieval
 TOP_K = 5
@@ -42,9 +43,13 @@ TEMPERATURE = 0.1
 
 # Generation
 MAX_NEW_TOKENS = 256
-MAX_SEQ_LENGTH = 512
 
 # Orchestrator control loop
 MAX_REVISIONS = 2
-JUDGE_STYLE_PASS_THRESHOLD = 4  # 1–5 scale, judge must rate ≥ this to accept
-CONTENT_PRESERVATION_MIN = 0.70  # cosine(draft, styled) ≥ this or flag drift
+JUDGE_STYLE_PASS_THRESHOLD = 4     # judge must rate styled ≥ this (1–5) to accept
+CONTENT_PRESERVATION_MIN = 0.70    # cosine(draft, styled) ≥ this or flag drift
+
+# Style-role mode. Current implementation uses "prompt" (retrieved style card
+# injected into the Ollama prompt). "lora" will require retraining adapters on
+# the new base model and converting them to GGUF for Ollama's ADAPTER directive.
+STYLE_MODE = "prompt"  # one of {"prompt", "lora"} — "lora" not yet implemented for Ollama

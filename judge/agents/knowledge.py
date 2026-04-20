@@ -1,11 +1,11 @@
-"""Knowledge LLM — produces a factual, style-neutral draft.
+"""Knowledge LLM — produces a factual, style-neutral draft via Ollama.
 
 The draft is intentionally plain so the Style LLM has clean content to
-restyle without also having to fix errors. Runs on the shared base model
-with any LoRA adapter disabled.
+restyle without also having to fix errors.
 """
 
-from agents.shared_model import SharedBaseModel
+from agents.ollama_client import OllamaClient
+from config import KNOWLEDGE_MODEL
 
 
 KNOWLEDGE_SYSTEM = (
@@ -17,14 +17,12 @@ KNOWLEDGE_SYSTEM = (
 
 
 class KnowledgeLLM:
-    def __init__(self, shared: SharedBaseModel):
-        self.shared = shared
+    def __init__(self, client: OllamaClient | None = None):
+        self.client = client or OllamaClient(KNOWLEDGE_MODEL)
 
     def draft(self, query: str) -> str:
-        prompt = f"{KNOWLEDGE_SYSTEM}\n\nQuestion: {query}\n\nAnswer:"
-        model = self.shared.model_without_adapter()
-        # If a PEFT wrapper exists, run with adapter disabled so we get base behavior.
-        if hasattr(model, "disable_adapter"):
-            with model.disable_adapter():
-                return self.shared.generate(model, prompt, temperature=0.5)
-        return self.shared.generate(model, prompt, temperature=0.5)
+        return self.client.generate(
+            prompt=f"Question: {query}\n\nAnswer:",
+            system=KNOWLEDGE_SYSTEM,
+            temperature=0.5,
+        )

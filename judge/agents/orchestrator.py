@@ -1,34 +1,44 @@
-"""Orchestrator — runs the Knowledge → Style → Judge control loop.
+"""Orchestrator — runs the Knowledge → Style → Judge control loop (Ollama).
+
+All three roles call Ollama. The StyleRetriever (FAISS + sentence-transformers)
+still runs locally and is also used as the embedder for the judge's
+content-preservation cosine.
 
 Loop per request:
   1. Retrieve top-K styles.
   2. Knowledge LLM drafts from the query alone.
   3. Style LLM rewrites the draft in the top-1 retrieved style.
-  4. Judge evaluates. Based on action:
+  4. Judge evaluates. Action determines next step:
        accept          -> return
        revise_style    -> Style LLM retries (attempt++) with stronger prompt
-       content_drift   -> Style LLM retries with re-emphasis on preserving DRAFT
+       content_drift   -> Style LLM retries with re-emphasis on DRAFT
        wrong_style     -> advance to the next style in top-K, reset attempt
   5. Cap at MAX_REVISIONS total Style/Judge rounds; emit best candidate.
 """
 
-from typing import List
 from retrieve import StyleRetriever
-from agents.shared_model import SharedBaseModel
+from agents.ollama_client import OllamaClient
 from agents.knowledge import KnowledgeLLM
 from agents.style import StyleLLM
 from agents.judge import JudgeLLM
 from agents.schemas import PipelineTrace, RevisionStep
-from config import MAX_REVISIONS, TOP_K
+from config import (
+    MAX_REVISIONS, TOP_K,
+    KNOWLEDGE_MODEL, STYLE_MODEL, JUDGE_MODEL,
+)
 
 
 class Orchestrator:
     def __init__(self):
+        print(f"[orchestrator] Knowledge={KNOWLEDGE_MODEL}  "
+              f"Style={STYLE_MODEL}  Judge={JUDGE_MODEL}")
         self.retriever = StyleRetriever()
-        self.shared = SharedBaseModel()
-        self.knowledge = KnowledgeLLM(self.shared)
-        self.style = StyleLLM(self.shared)
-        self.judge = JudgeLLM(self.shared, embedder=self.retriever)
+        self.knowledge = KnowledgeLLM(OllamaClient(KNOWLEDGE_MODEL))
+        self.style = StyleLLM(OllamaClient(STYLE_MODEL))
+        self.judge = JudgeLLM(
+            embedder=self.retriever,
+            client=OllamaClient(JUDGE_MODEL),
+        )
 
     def run(self, query: str, preference: str, top_k: int = TOP_K) -> PipelineTrace:
         retrieval = self.retriever.retrieve(preference, top_k=top_k)
@@ -43,13 +53,12 @@ class Orchestrator:
             draft="",
         )
 
-        # Knowledge draft once — reused across all style attempts.
         print(f"[orchestrator] Knowledge drafting...")
         draft = self.knowledge.draft(query)
         trace.draft = draft
 
-        style_idx = 0            # pointer into retrieval list
-        attempt_for_style = 0    # retries for the current style
+        style_idx = 0
+        attempt_for_style = 0
         total_revisions = 0
         best: RevisionStep | None = None
 
@@ -76,7 +85,6 @@ class Orchestrator:
             )
             trace.revisions.append(step)
 
-            # Track best so far by (style_score, content_cosine).
             if best is None or _score(step) > _score(best):
                 best = step
 

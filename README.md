@@ -63,11 +63,15 @@ flowchart TD
     J -->|wrong_style: next top-K| S
 ```
 
-| Role | Model | Input | Output |
+| Role | Model (via Ollama) | Input | Output |
 |---|---|---|---|
-| Knowledge LLM | Base, adapter disabled | User query | Neutral factual draft |
-| Style LLM | Base + retrieved LoRA | Draft + style card + preference | Rewritten answer in target style |
-| Judge LLM | Base (or a larger model), adapter disabled | Draft + styled + style card | `JudgeVerdict(style_score, content_faithful, content_cosine, action, rationale)` |
+| Knowledge LLM | `llama3.1:8b-instruct-q4_K_M` | User query | Neutral factual draft |
+| Style LLM | `llama3.1:8b-instruct-q4_K_M` + retrieved **Style Card** in prompt | Draft + style card + preference | Rewritten answer in target style |
+| Judge LLM | `mistral:7b-instruct-q4_K_M` (different family → reduces self-preference bias) | Draft + styled + style card | `JudgeVerdict(style_score, content_faithful, content_cosine, action, rationale)` |
+
+Models are configurable in `judge/config.py`. Embedding-based retrieval and the judge's content-preservation cosine still run locally with `sentence-transformers/all-MiniLM-L6-v2`.
+
+> **Note on the Style role.** The existing LoRA adapters in `style_bank/adapters/` were trained on TinyLlama 1.1B and do not transfer to Llama 3.1 8B. The current Ollama pipeline therefore runs Style in **prompt mode**: FAISS still retrieves the best Style Card (instruction + few-shot examples) and injects it into the prompt. Restoring the LoRA-retrieval path requires retraining adapters on the new base model and converting them to GGUF for Ollama's `ADAPTER` directive — tracked in `TODO.md`.
 
 The orchestrator caps the loop at `MAX_REVISIONS=2`, tracks a best-so-far candidate, and always emits something. Content preservation is measured with cosine similarity between sentence embeddings of the draft and the styled answer, independent of the judge's LLM call, to catch hallucinations that the judge might miss. All intermediate steps (every attempt, every verdict) are persisted to `results/traces/`.
 
@@ -166,15 +170,26 @@ python previous/run_pipeline.py --step evaluate --llm-judge   # adds LLM-as-judg
 python previous/run_pipeline.py --step demo
 ```
 
-### 2b. 3-LLM pipeline (Knowledge / Style / Judge)
+### 2b. 3-LLM pipeline (Knowledge / Style / Judge) via Ollama
+
+Pull the models once:
 
 ```bash
-# Run the 3-LLM evaluation (uses the same 20-prompt set as the baseline)
+ollama pull llama3.1:8b-instruct-q4_K_M   # Knowledge + Style
+ollama pull mistral:7b-instruct-q4_K_M    # Judge
+```
+
+Make sure `ollama serve` is running, then:
+
+```bash
+# 3-LLM evaluation (same 20-prompt set as the baseline)
 python judge/run_pipeline.py --step evaluate
 
 # Interactive demo — shows draft, each style attempt, and each judge verdict
 python judge/run_pipeline.py --step demo
 ```
+
+Per-role models are set in `judge/config.py` (`KNOWLEDGE_MODEL`, `STYLE_MODEL`, `JUDGE_MODEL`, `OLLAMA_HOST`).
 
 Outputs:
 - `results/evaluation_results.json` — baseline (single-LLM) report
