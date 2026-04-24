@@ -143,7 +143,7 @@ Each style in `style_bank/style_cards.jsonl`:
 }
 ```
 
-The 10 bundled styles: `formal_academic`, `casual_friendly`, `concise_bullet`, `eli5_simple`, `technical_precise`, `socratic_teaching`, `storytelling_narrative`, `professional_business`, `empathetic_supportive`, `debate_critical`.
+The 10 bundled styles: `formal_academic`, `business_executive`, `technical_precise`, `storytelling_narrative`, `eli5_playful`, `hype_bro`, `gen_z_online`, `keywords_only`, `dad_joke_pun`, `shakespeare_iambic`.
 
 Add a new style: append one JSONL line, rerun `python scripts/build_index.py`. That's it.
 

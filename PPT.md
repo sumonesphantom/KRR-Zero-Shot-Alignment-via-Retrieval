@@ -108,7 +108,7 @@ draft, styled, card ─► Judge LLM ─► { accept | revise_style | content_dr
                   └─► local cosine(draft, styled)   (catches hallucination the Judge misses)
 ```
 
-## 2.3 The style bank — 8 cards today
+## 2.3 The style bank — 10 cards today
 
 All live in `style_bank/style_cards.jsonl`. Each card = `{ id, tags, instruction, 2 exemplars }`.
 
@@ -122,6 +122,8 @@ All live in `style_bank/style_cards.jsonl`. Each card = `{ id, tags, instruction
 | `hype_bro`               | Hype-bro slang — "bro" · "no cap" · "W move" · "fire" |
 | `gen_z_online`           | Lowercase · chronically-online slang — "bestie" · "it's giving" |
 | `keywords_only`          | Maximum density · noun-phrase driven · drop articles |
+| `dad_joke_pun`           | Correct explanation peppered with terrible puns · "I'll see myself out" |
+| `shakespeare_iambic`     | Early Modern English · "thou" / "doth" / "verily" · soliloquy register |
 
 ## 2.4 Role → model
 
@@ -218,7 +220,7 @@ Every slide entry has five parts:
 
 **Visuals.** None. Negative space is the design.
 
-**Speaker notes** (~70 words, ~30 s): Zero-shot alignment via retrieval. From the user's view, they type a preference in plain English and get a style-matched answer immediately — no fine-tuning, no training, no wait. We make that work by stocking the shelf ahead of time: eight style cards authored as JSONL, one shared FAISS index, and Ollama for every LLM call. In six minutes: why per-user fine-tuning is the wrong frame, our three-LLM retrieval loop, why it works, and what moved on the eval.
+**Speaker notes** (~70 words, ~30 s): Zero-shot alignment via retrieval. From the user's view, they type a preference in plain English and get a style-matched answer immediately — no fine-tuning, no training, no wait. We make that work by stocking the shelf ahead of time: ten style cards authored as JSONL, one shared FAISS index, and Ollama for every LLM call. In six minutes: why per-user fine-tuning is the wrong frame, our three-LLM retrieval loop, why it works, and what moved on the eval.
 
 ---
 
@@ -269,11 +271,11 @@ Two stacked panels, each `--surface` filled, 1 px `--border`, 16 px radius, 24 p
 
 - Chrome as defined.
 - Headline: `Style as a symbolic, retrievable module`
-- Sub-headline: `Eight cards today. Scales by one JSONL line.`
+- Sub-headline: `Ten cards today. Scales by one JSONL line.`
 
-**Left column (col 1–6)** — 2×4 grid of style-card tiles, gap 16 px. Each tile: `--surface` fill, 1 px `--border`, 12 px radius, 20 px padding. Tile anatomy:
-- Line 1 (20 px, 600, `--primary`, mono): the id verbatim — `formal_academic` · `business_executive` · `technical_precise` · `storytelling_narrative` · `eli5_playful` · `hype_bro` · `gen_z_online` · `keywords_only`
-- Line 2 (16 px, 500, `--text`, lh 1.3, max 2 lines): the one-line flavour from §2.3 of this spec. Truncate with ellipsis if > 2 lines.
+**Left column (col 1–6)** — 2×5 grid of style-card tiles, gap 14 px. Each tile: `--surface` fill, 1 px `--border`, 12 px radius, 16 px padding. Tile anatomy:
+- Line 1 (18 px, 600, `--primary`, mono): the id verbatim — `formal_academic` · `business_executive` · `technical_precise` · `storytelling_narrative` · `eli5_playful` · `hype_bro` · `gen_z_online` · `keywords_only` · `dad_joke_pun` · `shakespeare_iambic`
+- Line 2 (14 px, 500, `--text`, lh 1.3, max 2 lines): the one-line flavour from §2.3 of this spec. Truncate with ellipsis if > 2 lines.
 
 **Right column (col 7–12)** — stacked:
 
