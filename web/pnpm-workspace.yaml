@@ -1,8 +1,0 @@
-# pnpm 10 is restrictive about running postinstall scripts in CI (non-TTY).
-# These packages need their native binaries built; Turbopack (via unrs-resolver)
-# and Next.js image handling (sharp) break silently otherwise — notably
-# Turbopack returns "Module not found" for every `@/...` alias at build time.
-onlyBuiltDependencies:
-  - sharp
-  - unrs-resolver
-  - "@tailwindcss/oxide"

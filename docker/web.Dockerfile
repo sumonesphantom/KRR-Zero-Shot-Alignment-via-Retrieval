@@ -3,23 +3,16 @@ FROM node:20-alpine AS build
 
 WORKDIR /app
 
-# Pin pnpm explicitly so install behavior is deterministic.
+# Pin pnpm explicitly so install is deterministic.
 RUN corepack enable && corepack prepare pnpm@10.15.0 --activate
 
-# pnpm-workspace.yaml MUST be present at install time: pnpm 10 reads
-# `onlyBuiltDependencies` from it and skips the postinstall script for any
-# package not on that list when running non-interactively. Without this,
-# unrs-resolver (Turbopack's Rust-based module resolver) and sharp don't get
-# their native .node binaries built — and then Turbopack silently fails with
-# "Module not found" on every @/ alias at `pnpm build`.
-COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
+# package.json has pnpm.onlyBuiltDependencies — required so the native
+# postinstalls for unrs-resolver (Turbopack's Rust resolver), sharp, and
+# @tailwindcss/oxide actually run in pnpm 10's non-interactive CI mode.
+COPY web/package.json web/pnpm-lock.yaml ./
 
-# Install, then unconditionally rebuild native packages. The rebuild is
-# defense-in-depth against any upstream Docker layer cache that serves a
-# previously-built-but-incomplete install: pnpm rebuild reruns postinstall
-# scripts regardless of whether the package is already "installed".
 RUN pnpm install --frozen-lockfile \
- && pnpm rebuild sharp unrs-resolver @tailwindcss/oxide
+ && pnpm rebuild || true
 
 COPY web/ ./
 

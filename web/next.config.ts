@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { NextConfig } from "next";
 
 /**
@@ -16,6 +17,18 @@ const API_UPSTREAM = process.env.API_UPSTREAM || "http://localhost:8000";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+
+  // Tell Turbopack the @/ alias explicitly, independent of tsconfig paths.
+  // Turbopack has bitten us in Docker builds where it fails to read
+  // tsconfig's baseUrl + paths correctly and emits "Module not found" for
+  // every @/... import. Making the alias first-class in next.config avoids
+  // that path entirely.
+  turbopack: {
+    resolveAlias: {
+      "@": path.resolve(process.cwd(), "."),
+    },
+  },
+
   async rewrites() {
     return [
       {
