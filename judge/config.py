@@ -42,7 +42,9 @@ MAX_NEW_TOKENS = 256
 
 # Orchestrator control loop
 MAX_REVISIONS = 2
-JUDGE_STYLE_PASS_THRESHOLD = 4     # judge must rate styled ≥ this (1–5) to accept
+JUDGE_STYLE_PASS_THRESHOLD = 5     # judge must rate styled ≥ this (1–5) to accept
+                                   # (set to 5 so attempt-0 only passes on an
+                                   # unambiguous style match; otherwise revise)
 CONTENT_PRESERVATION_MIN = 0.70    # cosine(draft, styled) ≥ this or flag drift
 
 # The retrieved style card is injected into the Style LLM's prompt (instruction

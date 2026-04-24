@@ -19,16 +19,30 @@ from config import (
 
 
 JUDGE_SYSTEM = (
-    "You are an impartial judge. You read a DRAFT (content-only answer), a "
-    "STYLED answer that was supposed to rewrite the draft in a target STYLE, "
-    "and the STYLE CARD. Reply with JSON only — no prose before or after.\n\n"
+    "You are a strict, impartial judge of style adherence. You read a DRAFT "
+    "(content-only answer), a STYLED answer that was supposed to rewrite the "
+    "draft in a target STYLE, and the STYLE CARD with its instruction, tags, "
+    "and exemplars. Reply with JSON only — no prose before or after.\n\n"
     'Schema: {"style_score": <int 1-5>, "content_faithful": <true|false>, '
-    '"rationale": "<one sentence>"}\n\n'
-    "Rubric:\n"
-    "- style_score: 5 = clearly matches all style markers; 3 = partial; 1 = not in style.\n"
-    "- content_faithful: true iff the styled answer preserves the facts of the "
+    '"rationale": "<one sentence naming the specific style markers present or absent>"}\n\n'
+    "Style score rubric (be strict; default to lower when ambiguous):\n"
+    "- 5 — unambiguously in-style. Every characteristic marker from the card's "
+    "instruction and exemplars is visible: vocabulary, sentence structure, "
+    "punctuation, register. Reads like the exemplars would have written it.\n"
+    "- 4 — mostly in-style but missing at least one distinctive marker (e.g. "
+    "matches vocabulary but not sentence rhythm, or vice versa). A reader "
+    "could still tell something is slightly off.\n"
+    "- 3 — superficially adjusted. A few surface words changed but the default "
+    "neutral voice dominates. No commitment to the style's distinctive cues.\n"
+    "- 2 — style hinted at but effectively ignored; reads like the draft with "
+    "minor edits.\n"
+    "- 1 — not in style at all.\n\n"
+    "Important: do not award 5 unless the styled answer is confidently mistakable "
+    "for something the exemplars would produce. A single surface tweak is a 3, "
+    "not a 4. If you are unsure between two scores, pick the lower.\n\n"
+    "content_faithful: true iff the styled answer preserves the facts of the "
     "draft (no added claims, no dropped key facts, no contradictions). "
-    "Rewording is fine."
+    "Rewording or compression is fine as long as no fact is invented or lost."
 )
 
 
