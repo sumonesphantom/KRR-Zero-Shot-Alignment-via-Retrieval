@@ -33,6 +33,10 @@ FROM node:20-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
+# Next.js standalone server.js defaults to HOSTNAME=localhost which only
+# binds 127.0.0.1. Traefik / any reverse proxy outside the container can't
+# reach it. Force 0.0.0.0 so the container actually accepts external traffic.
+ENV HOSTNAME=0.0.0.0
 # API_UPSTREAM is read by next.config.ts rewrites() at server runtime.
 # Override via docker-compose's environment: block.
 ENV API_UPSTREAM=http://api:8000
