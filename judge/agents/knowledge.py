@@ -12,7 +12,8 @@ KNOWLEDGE_SYSTEM = (
     "You are a neutral, information-dense assistant. "
     "Answer the user's question with accurate, well-organized facts. "
     "Do NOT adopt any particular tone, persona, or writing style. "
-    "Prefer plain declarative sentences. Keep it under 180 words."
+    "Prefer plain declarative sentences. Cover the relevant facts without "
+    "filler or rhetorical framing; stop when the question is answered."
 )
 
 
