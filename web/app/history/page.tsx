@@ -5,9 +5,9 @@ import { Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "../../components/ui/badge";
+import { Button } from "../../components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,10 +18,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { EmptyState } from "@/components/common/EmptyState";
-import { historyStore, type HistoryEntry } from "@/lib/stores/historyStore";
-import { truncate } from "@/lib/utils/format";
+} from "../../components/ui/alert-dialog";
+import { EmptyState } from "../../components/common/EmptyState";
+import { historyStore, type HistoryEntry } from "../../lib/stores/historyStore";
+import { truncate } from "../../lib/utils/format";
 
 function fmtRelative(iso: string): string {
   const d = new Date(iso);

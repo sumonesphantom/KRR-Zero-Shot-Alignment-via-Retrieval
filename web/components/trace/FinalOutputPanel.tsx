@@ -1,12 +1,12 @@
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { CopyButton } from "@/components/common/CopyButton";
-import { ActionBadge } from "@/components/trace/ActionBadge";
+import { Badge } from "../ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { CopyButton } from "../common/CopyButton";
+import { ActionBadge } from "./ActionBadge";
 import {
   CosineBadge,
   StyleScoreBadge,
-} from "@/components/trace/VerdictBadge";
-import type { JudgeVerdict } from "@/lib/api/types";
+} from "./VerdictBadge";
+import type { JudgeVerdict } from "../../lib/api/types";
 
 export function FinalOutputPanel({
   styleId,

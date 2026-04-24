@@ -7,13 +7,13 @@ import {
   AccordionContent,
   AccordionItem,
   AccordionTrigger,
-} from "@/components/ui/accordion";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { ActionBadge } from "@/components/trace/ActionBadge";
-import { CosineBadge, StyleScoreBadge } from "@/components/trace/VerdictBadge";
-import type { RevisionStep } from "@/lib/api/types";
+} from "../ui/accordion";
+import { Badge } from "../ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { Skeleton } from "../ui/skeleton";
+import { ActionBadge } from "./ActionBadge";
+import { CosineBadge, StyleScoreBadge } from "./VerdictBadge";
+import type { RevisionStep } from "../../lib/api/types";
 
 export function RevisionCard({
   step,

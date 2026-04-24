@@ -2,17 +2,17 @@
 
 import { AlertCircle } from "lucide-react";
 
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Progress } from "@/components/ui/progress";
-import { PlaygroundForm } from "@/components/playground/PlaygroundForm";
-import { DraftPanel } from "@/components/trace/DraftPanel";
-import { FinalOutputPanel } from "@/components/trace/FinalOutputPanel";
-import { RetrievalPanel } from "@/components/trace/RetrievalPanel";
-import { RevisionsList } from "@/components/trace/RevisionsList";
-import { EmptyState } from "@/components/common/EmptyState";
+import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
+import { Progress } from "../ui/progress";
+import { PlaygroundForm } from "./PlaygroundForm";
+import { DraftPanel } from "../trace/DraftPanel";
+import { FinalOutputPanel } from "../trace/FinalOutputPanel";
+import { RetrievalPanel } from "../trace/RetrievalPanel";
+import { RevisionsList } from "../trace/RevisionsList";
+import { EmptyState } from "../common/EmptyState";
 
-import { useGenerationStream } from "@/lib/hooks/useGenerationStream";
-import { useHealth } from "@/lib/hooks/useHealth";
+import { useGenerationStream } from "../../lib/hooks/useGenerationStream";
+import { useHealth } from "../../lib/hooks/useHealth";
 
 export function JudgePlayground() {
   const { health } = useHealth();

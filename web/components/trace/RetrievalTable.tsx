@@ -1,7 +1,7 @@
-import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
-import { cn } from "@/lib/utils";
-import type { RetrievalHit } from "@/lib/api/types";
+import { Badge } from "../ui/badge";
+import { Progress } from "../ui/progress";
+import { cn } from "../../lib/utils";
+import type { RetrievalHit } from "../../lib/api/types";
 
 export function RetrievalTable({
   hits,

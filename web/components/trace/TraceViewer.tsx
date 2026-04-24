@@ -1,10 +1,10 @@
 "use client";
 
-import { DraftPanel } from "@/components/trace/DraftPanel";
-import { FinalOutputPanel } from "@/components/trace/FinalOutputPanel";
-import { RetrievalPanel } from "@/components/trace/RetrievalPanel";
-import { RevisionsList } from "@/components/trace/RevisionsList";
-import type { PipelineTrace } from "@/lib/api/types";
+import { DraftPanel } from "./DraftPanel";
+import { FinalOutputPanel } from "./FinalOutputPanel";
+import { RetrievalPanel } from "./RetrievalPanel";
+import { RevisionsList } from "./RevisionsList";
+import type { PipelineTrace } from "../../lib/api/types";
 
 export interface TraceViewerProps {
   trace: PipelineTrace;

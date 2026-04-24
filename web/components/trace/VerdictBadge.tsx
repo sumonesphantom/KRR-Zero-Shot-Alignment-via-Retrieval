@@ -1,4 +1,4 @@
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "../ui/badge";
 
 export function StyleScoreBadge({ score }: { score: number }) {
   const variant = score >= 4 ? "success" : score >= 3 ? "warn" : "destructive";

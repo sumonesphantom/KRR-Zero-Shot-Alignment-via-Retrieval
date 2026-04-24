@@ -1,6 +1,6 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { RetrievalTable } from "@/components/trace/RetrievalTable";
-import type { RetrievalHit } from "@/lib/api/types";
+import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { RetrievalTable } from "./RetrievalTable";
+import type { RetrievalHit } from "../../lib/api/types";
 
 export function RetrievalPanel({
   hits,

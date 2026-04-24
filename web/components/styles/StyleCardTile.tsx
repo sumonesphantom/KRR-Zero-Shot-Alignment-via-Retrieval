@@ -1,16 +1,16 @@
 "use client";
 
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
 import {
   Card,
   CardContent,
   CardFooter,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { truncate } from "@/lib/utils/format";
-import type { StyleCard as TStyleCard } from "@/lib/api/types";
+} from "../ui/card";
+import { truncate } from "../../lib/utils/format";
+import type { StyleCard as TStyleCard } from "../../lib/api/types";
 
 export function StyleCardTile({
   card,

@@ -1,6 +1,6 @@
-import { api } from "@/lib/api/client";
-import { StyleGrid } from "@/components/styles/StyleGrid";
-import { EmptyState } from "@/components/common/EmptyState";
+import { api } from "../../lib/api/client";
+import { StyleGrid } from "../../components/styles/StyleGrid";
+import { EmptyState } from "../../components/common/EmptyState";
 
 export const dynamic = "force-dynamic";
 

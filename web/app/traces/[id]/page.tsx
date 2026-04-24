@@ -1,9 +1,9 @@
 import Link from "next/link";
 
-import { api, ApiError } from "@/lib/api/client";
-import { EmptyState } from "@/components/common/EmptyState";
-import { TraceViewer } from "@/components/trace/TraceViewer";
-import { Button } from "@/components/ui/button";
+import { api, ApiError } from "../../../lib/api/client";
+import { EmptyState } from "../../../components/common/EmptyState";
+import { TraceViewer } from "../../../components/trace/TraceViewer";
+import { Button } from "../../../components/ui/button";
 
 export const dynamic = "force-dynamic";
 

@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 
-import type { StyleCard } from "@/lib/api/types";
-import { StyleCardTile } from "@/components/styles/StyleCardTile";
-import { StyleDetailDrawer } from "@/components/styles/StyleDetailDrawer";
+import type { StyleCard } from "../../lib/api/types";
+import { StyleCardTile } from "./StyleCardTile";
+import { StyleDetailDrawer } from "./StyleDetailDrawer";
 
 export function StyleGrid({ styles }: { styles: StyleCard[] }) {
   const [active, setActive] = useState<StyleCard | null>(null);

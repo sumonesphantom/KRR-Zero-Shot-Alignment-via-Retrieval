@@ -1,8 +1,8 @@
 "use client";
 
-import { RevisionCard } from "@/components/trace/RevisionCard";
-import { EmptyState } from "@/components/common/EmptyState";
-import type { PipelineTrace, RevisionStep } from "@/lib/api/types";
+import { RevisionCard } from "./RevisionCard";
+import { EmptyState } from "../common/EmptyState";
+import type { PipelineTrace, RevisionStep } from "../../lib/api/types";
 
 export function RevisionsList({
   revisions,

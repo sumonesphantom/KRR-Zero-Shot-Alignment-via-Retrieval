@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { use, useEffect, useState } from "react";
 
-import { Button } from "@/components/ui/button";
-import { EmptyState } from "@/components/common/EmptyState";
-import { TraceViewer } from "@/components/trace/TraceViewer";
-import { historyStore, type HistoryEntry } from "@/lib/stores/historyStore";
+import { Button } from "../../../components/ui/button";
+import { EmptyState } from "../../../components/common/EmptyState";
+import { TraceViewer } from "../../../components/trace/TraceViewer";
+import { historyStore, type HistoryEntry } from "../../../lib/stores/historyStore";
 
 export default function HistoryDetailPage({
   params,

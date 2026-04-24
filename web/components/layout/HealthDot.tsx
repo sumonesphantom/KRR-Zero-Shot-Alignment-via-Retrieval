@@ -1,13 +1,13 @@
 "use client";
 
-import { useHealth } from "@/lib/hooks/useHealth";
-import { cn } from "@/lib/utils";
+import { useHealth } from "../../lib/hooks/useHealth";
+import { cn } from "../../lib/utils";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@/components/ui/tooltip";
+} from "../ui/tooltip";
 
 export function HealthDot() {
   const { health, error } = useHealth();

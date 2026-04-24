@@ -11,9 +11,9 @@ import {
   Info,
 } from "lucide-react";
 
-import { cn } from "@/lib/utils";
-import { ThemeToggle } from "@/components/layout/ThemeToggle";
-import { HealthDot } from "@/components/layout/HealthDot";
+import { cn } from "../../lib/utils";
+import { ThemeToggle } from "./ThemeToggle";
+import { HealthDot } from "./HealthDot";
 
 const items = [
   { href: "/", label: "Playground", icon: PlayCircle },

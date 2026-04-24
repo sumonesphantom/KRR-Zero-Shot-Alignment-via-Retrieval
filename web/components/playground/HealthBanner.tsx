@@ -2,8 +2,8 @@
 
 import { AlertCircle } from "lucide-react";
 
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { useHealth } from "@/lib/hooks/useHealth";
+import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
+import { useHealth } from "../../lib/hooks/useHealth";
 
 export function HealthBanner() {
   const { health, error } = useHealth();

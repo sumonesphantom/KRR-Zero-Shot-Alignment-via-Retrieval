@@ -1,5 +1,5 @@
-import { Badge } from "@/components/ui/badge";
-import type { JudgeAction } from "@/lib/api/types";
+import { Badge } from "../ui/badge";
+import type { JudgeAction } from "../../lib/api/types";
 
 const copy: Record<JudgeAction, { label: string; variant: "default" | "success" | "warn" | "destructive" }> = {
   accept: { label: "accept", variant: "success" },

@@ -1,5 +1,5 @@
-import { HealthBanner } from "@/components/playground/HealthBanner";
-import { JudgePlayground } from "@/components/playground/JudgePlayground";
+import { HealthBanner } from "../components/playground/HealthBanner";
+import { JudgePlayground } from "../components/playground/JudgePlayground";
 
 export default function PlaygroundPage() {
   return (

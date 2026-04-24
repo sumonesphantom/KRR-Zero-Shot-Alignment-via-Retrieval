@@ -1,11 +1,11 @@
 import Link from "next/link";
 
-import { api } from "@/lib/api/client";
-import { EmptyState } from "@/components/common/EmptyState";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { truncate } from "@/lib/utils/format";
+import { api } from "../../lib/api/client";
+import { EmptyState } from "../../components/common/EmptyState";
+import { Badge } from "../../components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
+import { Button } from "../../components/ui/button";
+import { truncate } from "../../lib/utils/format";
 
 export const dynamic = "force-dynamic";
 
