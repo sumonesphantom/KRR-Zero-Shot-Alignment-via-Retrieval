@@ -224,3 +224,11 @@ TODO.md
 
 # macOS
 .DS_Store
+
+# Generated FAISS artifacts — rebuilt by scripts/build_index.py on image build
+data/style_index.faiss
+data/id_map.json
+data/style_cards_cache.json
+
+# Local compose overrides (local dev only)
+docker-compose.override.yml

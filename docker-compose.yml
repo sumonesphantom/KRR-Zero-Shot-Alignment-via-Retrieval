@@ -1,0 +1,75 @@
+# Dokploy-ready compose.
+#
+# - No ports are published on the host. Dokploy's Traefik sits in front of the
+#   deployment's network and routes based on the Dokploy UI config. When
+#   running locally via `docker compose up`, use `docker compose exec` to hit
+#   the services, or add a temporary `ports:` override — by design nothing is
+#   exposed by default.
+# - The browser stays on a single origin: it hits the `web` service, which
+#   server-side rewrites `/api/*` through to `api:8000` (see web/next.config.ts).
+# - Ollama is entirely internal. To use an external Ollama host (e.g. a GPU
+#   box), set OLLAMA_HOST in the `api` service environment and remove the
+#   ollama service from this compose.
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama-models:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      # Resolved against the compose-internal network.
+      OLLAMA_HOST: http://ollama:11434
+      # Pulled models on your deployment — set these per machine via Dokploy
+      # UI or leave defaults matching what you've pulled.
+      KNOWLEDGE_MODEL: ${KNOWLEDGE_MODEL:-gemma4:latest}
+      STYLE_MODEL: ${STYLE_MODEL:-gemma4:latest}
+      JUDGE_MODEL: ${JUDGE_MODEL:-rnj-1:latest}
+      # Browser origins permitted by CORS. Since the web service uses
+      # same-origin fetches in production, this mostly matters for direct
+      # debugging via docker exec.
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
+      MAX_CONCURRENT_JUDGE_RUNS: ${MAX_CONCURRENT_JUDGE_RUNS:-2}
+      MAX_NEW_TOKENS: ${MAX_NEW_TOKENS:-768}
+    volumes:
+      # Persist evaluation traces across redeploys.
+      - api-results:/app/results
+    expose:
+      - "8000"
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+      args:
+        # Empty → browser uses same-origin paths (/api/...). Next.js server
+        # then rewrites those to the api service via API_UPSTREAM below.
+        NEXT_PUBLIC_API_BASE: ""
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+    environment:
+      API_UPSTREAM: http://api:8000
+      NODE_ENV: production
+    expose:
+      - "3000"
+
+volumes:
+  ollama-models:
+  api-results:

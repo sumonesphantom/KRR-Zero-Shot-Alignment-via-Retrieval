@@ -1,0 +1,25 @@
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/node_modules
+
+# Build artifacts that shouldn't leak into either Dockerfile's context.
+.next/
+web/.next/
+web/node_modules
+.venv/
+venv/
+
+# Local-only state.
+.env
+.env.local
+**/*.log
+results/traces/*.json
+results/evaluation_results*.json
+
+# VCS + editor.
+.git/
+.gitignore
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,1146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Zero-Shot Alignment via Retrieval</title>
+<meta name="viewport" content="width=1920, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap" rel="stylesheet" />
+
+<script type="application/json" id="speaker-notes">
+[
+"Zero-shot alignment via retrieval. From the user's view, they type a preference in plain English and get a style-matched response immediately — no fine-tuning, no training, no waiting. We make that work by stocking the shelf ahead of time: ten style cards authored as JSONL, one shared FAISS index, and Ollama for every LLM call. In six minutes I'll cover why per-user fine-tuning is the wrong frame, the three-LLM retrieval loop we built, and what moved on a 20-prompt eval.",
+"Per-user fine-tuning doesn't scale. It needs labelled per-user data, VRAM, training loops — and worse, it mutates the shared base model, so every new tenant risks overwriting what worked for the last one. The core intuition: style is a retrieval problem, not a training problem. Write style down once as a card, index the bank once, and compose at inference time. No gradients leave the lab, no weights drift in production, and adding a new style is a one-line change.",
+"The system has two halves. Retrieval: each style card — id, tags, a natural-language instruction, and two exemplars — is encoded with all-MiniLM-L6-v2 and stored in a FAISS IndexFlatIP. The user's preference is just a query. Top-K by cosine picks the card. Generation: three role-specialized LLMs, all served by Ollama. Knowledge drafts neutral facts. Style rewrites using the card. Judge scores style match plus content faithfulness and emits one of four actions — accept, revise_style, content_drift, or wrong_style. The orchestrator caps revisions at two and always emits the best candidate seen. See orchestrator.py lines 43 to 110.",
+"Every design choice kills a specific failure mode. Decoupling content from style keeps the Style LLM from hallucinating facts just to look more stylistic. Running the judge on a different model family prevents self-preference bias, documented in Zheng et al. 2023. Computing the content cosine locally with sentence-transformers is independent of the judge's LLM call, so it catches hallucinations the judge missed. Bounded revisions cap worst-case cost. Each of these is one env var or one file away from being swapped.",
+"On 20 prompts the three-LLM pipeline wins 13 out of 20 versus the same Ollama model without retrieval. Content cosine averages 0.80 and every single item passes the 0.70 drift threshold, so the gains are real, not hallucinated. The biggest movers are the styles with distinctive markers: casual_friendly jumped from a 0.15 baseline win rate to 1.00, debate_critical from 0.15 to 1.00, socratic_teaching from 0.17 to 0.75. Every final response is a triple — card id, content cosine, judge verdict — persisted to results slash traces. Two honest caveats: the reported run had Knowledge, Style and Judge on one model so the judge rubber-stamped at 4.9 out of 5 and the revision loop barely fired, which the new cross-family judge config fixes; and retrieval still misses 5 of 20, capping the ceiling.",
+"The web UI streams every step of the loop over SSE — retrieval, draft, each style attempt, each judge verdict, final output. That's the same trace format we persist offline for eval, so one renderer handles both live and historical views. Three queued unlocks, each isolated to one config change: route the Judge to a different-family model, rnj-1, so the revision loop actually fires and we can re-measure; fix the 5 of 20 retrieval misses with a larger bank or a judge-in-the-loop rerank over top-K; and grow the bank itself — adding a style is one JSONL line, no retraining, which is the point of the retrieval frame."
+]
+</script>
+
+<style>
+  :root {
+    --ink: #14140f;
+    --ink-2: #3a3a34;
+    --ink-3: #6e6e64;
+    --ink-4: #a6a69a;
+    --paper: #f5f2ec;
+    --paper-2: #ece8df;
+    --paper-3: #e1dccf;
+    --rule: #d6d1c2;
+    --accent: #1f4a48;        /* deep teal-indigo */
+    --accent-2: #c7502c;      /* terracotta accent, sparingly */
+    --accent-wash: #e8e3d4;
+  }
+
+  html, body {
+    margin: 0; padding: 0;
+    background: #0a0a08;
+    font-family: "Inter Tight", system-ui, sans-serif;
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  deck-stage section {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Inter Tight", system-ui, sans-serif;
+    font-feature-settings: "ss01", "cv11";
+    letter-spacing: -0.01em;
+    overflow: hidden;
+  }
+
+  /* ——— Frame / chrome ——— */
+  .frame {
+    position: absolute; inset: 0;
+    padding: 64px 100px 96px 100px;
+    display: flex; flex-direction: column;
+    box-sizing: border-box;
+  }
+  .topbar {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 18px;
+    color: var(--ink-3);
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+  .topbar .right { color: var(--ink-4); }
+  .topbar .dot { color: var(--accent-2); margin-right: 10px; }
+  .eyebrow {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 18px;
+    color: var(--ink-3);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 28px;
+  }
+  .hline { height: 1px; background: var(--rule); margin: 18px 0 0 0; }
+  .footer {
+    position: absolute; left: 100px; right: 100px; bottom: 40px;
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 16px; color: var(--ink-4);
+  }
+  .footer .mid { color: var(--ink-3); }
+
+  /* ——— Typography ——— */
+  h1.title {
+    font-size: 84px;
+    font-weight: 500;
+    line-height: 1.02;
+    letter-spacing: -0.025em;
+    margin: 0;
+    color: var(--ink);
+  }
+  h2.title {
+    font-size: 72px;
+    font-weight: 500;
+    line-height: 1.04;
+    letter-spacing: -0.02em;
+    margin: 0 0 20px 0;
+    color: var(--ink);
+    max-width: 1500px;
+  }
+  .subtitle {
+    font-family: "Source Serif 4", serif;
+    font-style: italic;
+    font-weight: 400;
+    font-size: 36px;
+    line-height: 1.3;
+    color: var(--ink-2);
+    max-width: 1300px;
+  }
+  .keymsg {
+    font-family: "Source Serif 4", serif;
+    font-size: 30px;
+    line-height: 1.35;
+    color: var(--ink-2);
+    max-width: 1400px;
+    font-style: italic;
+  }
+  .body { font-size: 30px; line-height: 1.4; color: var(--ink-2); }
+  .small { font-size: 24px; line-height: 1.45; color: var(--ink-3); }
+  .mono { font-family: "JetBrains Mono", monospace; }
+  .accent { color: var(--accent); }
+
+  /* ——— Title slide ——— */
+  .cover { background: var(--paper); }
+  .cover .frame { padding: 72px 100px; }
+  .cover .stamp {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 18px;
+    color: var(--ink-3);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .cover h1 {
+    font-size: 128px;
+    font-weight: 500;
+    line-height: 0.98;
+    letter-spacing: -0.035em;
+    margin: 0;
+    color: var(--ink);
+  }
+  .cover h1 em {
+    font-family: "Source Serif 4", serif;
+    font-style: italic;
+    font-weight: 400;
+    color: var(--accent);
+  }
+  .cover .sub {
+    font-family: "Source Serif 4", serif;
+    font-style: italic;
+    font-size: 40px;
+    color: var(--ink-2);
+    margin-top: 34px;
+    max-width: 1400px;
+    line-height: 1.25;
+  }
+  .cover .meta {
+    display: grid;
+    grid-template-columns: auto 1fr auto 1fr auto 1fr;
+    gap: 12px 36px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 20px;
+    color: var(--ink-3);
+    margin-top: 60px;
+    max-width: 1400px;
+    align-items: baseline;
+  }
+  .cover .meta .k { color: var(--ink-4); letter-spacing: 0.1em; text-transform: uppercase; }
+  .cover .meta .v { color: var(--ink); }
+
+  /* ——— Bullets (numbered) ——— */
+  .numbul { list-style: none; padding: 0; margin: 0; }
+  .numbul li {
+    display: grid;
+    grid-template-columns: 70px 1fr;
+    gap: 24px;
+    padding: 22px 0;
+    border-top: 1px solid var(--rule);
+    font-size: 32px;
+    line-height: 1.3;
+    color: var(--ink);
+    align-items: baseline;
+  }
+  .numbul li:last-child { border-bottom: 1px solid var(--rule); }
+  .numbul .n {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 18px;
+    color: var(--ink-4);
+    letter-spacing: 0.1em;
+    padding-top: 8px;
+  }
+  .numbul .t b { font-weight: 600; color: var(--ink); }
+  .numbul .t span.muted { color: var(--ink-3); }
+
+  /* ——— Two-panel diagram (slide 1) ——— */
+  .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; flex: 1; align-items: stretch; min-height: 0; }
+  .panel {
+    border: 1px solid var(--rule);
+    background: #fbf9f3;
+    padding: 28px 36px 28px;
+    display: flex; flex-direction: column;
+    position: relative;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .panel.bad { background: #f5f2ec; }
+  .panel.good { background: #efece1; border-color: #c9c2ad; }
+  .panel .plabel {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 16px; color: var(--ink-3); letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    display: flex; justify-content: space-between;
+  }
+  .panel .plabel .tag { color: var(--accent-2); }
+  .panel .ptitle {
+    font-size: 30px;
+    font-weight: 500;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+    line-height: 1.15;
+    margin-bottom: 14px;
+  }
+  .panel svg { width: 100%; flex: 1; min-height: 0; }
+  .panel .caption {
+    font-family: "Source Serif 4", serif;
+    font-style: italic;
+    font-size: 20px;
+    color: var(--ink-3);
+    margin-top: 12px;
+    line-height: 1.3;
+  }
+
+  /* ——— Generic columns ——— */
+  .two-col { display: grid; grid-template-columns: 520px 1fr; gap: 64px; flex: 1; align-items: start; }
+  .two-col-wide { display: grid; grid-template-columns: 1fr 1fr; gap: 72px; flex: 1; align-items: stretch; }
+
+  /* ——— Style card visual ——— */
+  .stylecard {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 17px;
+    background: #fbf9f3;
+    border: 1px solid var(--rule);
+    padding: 22px 26px;
+    line-height: 1.7;
+    color: var(--ink-2);
+    box-shadow: 8px 8px 0 var(--paper-3);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .stylecard .k { color: var(--ink-4); }
+  .stylecard .v { color: var(--ink); }
+  .stylecard .str { color: var(--accent); }
+
+  /* ——— Pipeline diagram ——— */
+  .pipeline {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 20px;
+    align-items: stretch;
+  }
+  .node {
+    border: 1px solid var(--rule);
+    background: #fbf9f3;
+    padding: 14px 20px;
+    display: flex; flex-direction: column;
+    position: relative;
+    min-height: 0;
+  }
+  .node .nlabel {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 14px;
+    color: var(--ink-4);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .node .ntitle {
+    font-size: 26px;
+    font-weight: 500;
+    line-height: 1.15;
+    margin-top: 10px;
+    color: var(--ink);
+  }
+  .node .ndesc {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 15px;
+    color: var(--ink-3);
+    margin-top: auto;
+    padding-top: 18px;
+    line-height: 1.4;
+  }
+
+  /* ——— KSJ loop diagram ——— */
+  .ksj-wrap { flex: 1; display: grid; grid-template-columns: 1fr 420px; gap: 56px; }
+  .ksj { position: relative; width: 100%; height: 100%; }
+
+  /* ——— Rationale quadrants ——— */
+  .quads {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 0;
+    border-top: 1px solid var(--rule);
+    border-left: 1px solid var(--rule);
+  }
+  .quad {
+    border-right: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    padding: 38px 44px;
+    display: flex; flex-direction: column;
+    background: var(--paper);
+  }
+  .quad .qnum {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 16px;
+    color: var(--ink-4);
+    letter-spacing: 0.15em;
+  }
+  .quad .qchoice {
+    font-size: 38px;
+    font-weight: 500;
+    line-height: 1.1;
+    color: var(--ink);
+    margin-top: 14px;
+    letter-spacing: -0.015em;
+  }
+  .quad .qdivider {
+    margin-top: 22px;
+    display: flex; align-items: center; gap: 14px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 14px;
+    color: var(--ink-4);
+    letter-spacing: 0.15em;
+  }
+  .quad .qdivider .line { flex: 1; height: 1px; background: var(--rule); }
+  .quad .qfail {
+    margin-top: 18px;
+    font-family: "Source Serif 4", serif;
+    font-size: 24px;
+    font-style: italic;
+    color: var(--ink-2);
+    line-height: 1.4;
+  }
+  .quad .qcite {
+    margin-top: auto;
+    padding-top: 18px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 13px;
+    color: var(--ink-4);
+    letter-spacing: 0.05em;
+  }
+
+  /* ——— Trace timeline (slide 5) ——— */
+  .trace {
+    flex: 1;
+    display: flex; flex-direction: column;
+    gap: 0;
+    border: 1px solid var(--rule);
+    background: #fbf9f3;
+    font-family: "JetBrains Mono", monospace;
+  }
+  .trow {
+    display: grid;
+    grid-template-columns: 120px 180px 1fr 260px;
+    border-top: 1px solid var(--rule);
+    font-size: 18px;
+    align-items: stretch;
+  }
+  .trow:first-child { border-top: none; }
+  .trow > div { padding: 16px 22px; border-right: 1px solid var(--rule); }
+  .trow > div:last-child { border-right: none; }
+  .trow .step { color: var(--ink-4); letter-spacing: 0.12em; text-transform: uppercase; font-size: 14px; padding-top: 20px; }
+  .trow .kind { color: var(--ink); font-weight: 600; font-size: 20px; padding-top: 18px; }
+  .trow .body { color: var(--ink-2); font-size: 18px; line-height: 1.45; }
+  .trow .meta { color: var(--accent); font-size: 17px; line-height: 1.4; }
+  .trow.final { background: var(--accent-wash); }
+  .trow.final .kind { color: var(--accent); }
+
+  /* ——— Results (slide 6) ——— */
+  .chart-area { flex: 1; display: grid; grid-template-columns: 1.2fr 1fr; gap: 72px; align-items: stretch; }
+  .bars {
+    display: flex; flex-direction: column; justify-content: flex-end;
+    gap: 32px;
+    padding: 40px 0 60px 0;
+  }
+  .bar-row { display: grid; grid-template-columns: 280px 1fr 80px; gap: 20px; align-items: center; }
+  .bar-row .lab { font-size: 22px; color: var(--ink); line-height: 1.2; }
+  .bar-row .lab .sub { display: block; font-family: "JetBrains Mono", monospace; font-size: 13px; color: var(--ink-4); letter-spacing: 0.1em; margin-top: 4px; }
+  .bar-track { height: 48px; background: #ece8df; position: relative; border: 1px solid var(--rule); }
+  .bar-fill { height: 100%; position: absolute; top: 0; left: 0; }
+  .bar-val { font-family: "JetBrains Mono", monospace; font-size: 22px; color: var(--ink); text-align: right; }
+  .bar-row.hero .bar-fill { background: var(--accent); }
+  .bar-row.hero .bar-val { color: var(--accent); font-weight: 600; font-size: 26px; }
+  .bar-row.mid .bar-fill { background: var(--ink-3); }
+  .bar-row.low .bar-fill { background: var(--ink-4); }
+
+  .metrics {
+    border: 1px solid var(--rule);
+    background: #fbf9f3;
+    padding: 28px 32px;
+    align-self: end;
+  }
+  .metrics .mhead {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 14px; color: var(--ink-4); letter-spacing: 0.15em;
+    padding-bottom: 14px; border-bottom: 1px solid var(--rule);
+  }
+  .mrow {
+    display: grid; grid-template-columns: 1fr auto;
+    padding: 18px 0;
+    border-bottom: 1px dotted var(--rule);
+    align-items: baseline;
+  }
+  .mrow:last-child { border-bottom: none; }
+  .mrow .mk { font-size: 19px; color: var(--ink-2); }
+  .mrow .mv { font-family: "JetBrains Mono", monospace; font-size: 26px; color: var(--ink); font-weight: 500; }
+  .mrow .mv .unit { color: var(--ink-4); font-size: 16px; margin-left: 4px; }
+
+  .caveat {
+    margin-top: 24px;
+    font-family: "Source Serif 4", serif;
+    font-style: italic;
+    font-size: 22px;
+    color: var(--ink-3);
+    line-height: 1.4;
+    padding-left: 18px;
+    border-left: 2px solid var(--accent-2);
+  }
+
+  /* ——— Demo (slide 7) ——— */
+  .demo-wrap { flex: 1; display: grid; grid-template-columns: 1.35fr 1fr; gap: 56px; }
+  .browser {
+    background: #fbf9f3;
+    border: 1px solid var(--rule);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .browser .bar {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--rule);
+    display: flex; gap: 8px; align-items: center;
+    background: #f1ede2;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 14px;
+    color: var(--ink-3);
+  }
+  .browser .bar .dots { display: flex; gap: 6px; margin-right: 14px; }
+  .browser .bar .dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--ink-4); display: block; }
+  .browser .bar .url {
+    flex: 1; background: var(--paper); border: 1px solid var(--rule);
+    padding: 5px 12px; color: var(--ink-2);
+  }
+  .browser .body { padding: 28px 32px; flex: 1; display: flex; flex-direction: column; gap: 16px; }
+  .sse-step {
+    display: grid; grid-template-columns: 130px 1fr auto;
+    gap: 16px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--rule);
+    align-items: start;
+  }
+  .sse-step:last-child { border-bottom: none; }
+  .sse-step .ss-t { font-family: "JetBrains Mono", monospace; font-size: 13px; color: var(--ink-4); letter-spacing: 0.1em; text-transform: uppercase; padding-top: 4px; }
+  .sse-step .ss-b { font-size: 18px; color: var(--ink-2); line-height: 1.35; }
+  .sse-step .ss-b b { color: var(--ink); font-weight: 600; }
+  .sse-step .ss-s { font-family: "JetBrains Mono", monospace; font-size: 12px; padding: 4px 10px; background: var(--accent-wash); color: var(--accent); letter-spacing: 0.08em; }
+  .sse-step.streaming .ss-s { background: #f0dcd3; color: var(--accent-2); }
+  .sse-step .caret { display: inline-block; width: 10px; height: 20px; background: var(--accent); vertical-align: -3px; margin-left: 2px; animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .roadmap { display: flex; flex-direction: column; gap: 0; }
+  .rd-item {
+    padding: 28px 0;
+    border-top: 1px solid var(--rule);
+    display: grid;
+    grid-template-columns: 80px 1fr;
+    gap: 20px;
+    align-items: baseline;
+  }
+  .rd-item:last-child { border-bottom: 1px solid var(--rule); }
+  .rd-item .rn { font-family: "JetBrains Mono", monospace; font-size: 16px; color: var(--ink-4); letter-spacing: 0.1em; }
+  .rd-item .rt { font-size: 26px; color: var(--ink); line-height: 1.25; }
+  .rd-item .rt .code { font-family: "JetBrains Mono", monospace; font-size: 20px; color: var(--accent); background: var(--accent-wash); padding: 2px 8px; }
+  .rd-item .rt .sub { display: block; font-family: "Source Serif 4", serif; font-style: italic; font-size: 20px; color: var(--ink-3); margin-top: 8px; line-height: 1.3; }
+
+  /* generic arrows / shared */
+  .arrow-label { font-family: "JetBrains Mono", monospace; font-size: 13px; fill: var(--ink-4); letter-spacing: 0.1em; }
+  .node-label { font-family: "Inter Tight", sans-serif; font-size: 22px; font-weight: 500; fill: var(--ink); }
+  .node-sub { font-family: "JetBrains Mono", monospace; font-size: 13px; fill: var(--ink-3); letter-spacing: 0.05em; }
+
+</style>
+</head>
+
+<body>
+<deck-stage width="1920" height="1080">
+
+<!-- ==================== SLIDE 1 — TITLE ==================== -->
+<section data-label="01 Title" class="cover">
+  <div class="frame">
+    <div class="topbar">
+      <span><span class="dot">●</span>KRR · paper presentation · ASU</span>
+      <span class="right">apr 2026 · 6 min · 6 slides</span>
+    </div>
+
+    <div style="flex:1; display:flex; flex-direction:column; justify-content:center;">
+      <div class="stamp" style="margin-bottom: 28px;">Zero-shot alignment · retrieval-composed styles · KSJ loop</div>
+      <h1>
+        Zero-shot alignment<br/>
+        <em>via</em> retrieval.
+      </h1>
+      <div class="sub">Ten style cards, a FAISS index, and three role-specialized LLMs — Knowledge, Style, Judge — looping over a frozen base.</div>
+    </div>
+
+    <!-- TEAM · 5 members -->
+    <div style="margin-top: 36px;">
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 16px; color: var(--ink-4); letter-spacing: 0.15em; text-transform: uppercase; margin-bottom: 18px;">
+        Team · Arizona State University
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 20px;">
+        <div style="border-top: 1px solid var(--rule); padding-top: 14px;">
+          <div style="font-family: 'Inter Tight'; font-size: 22px; font-weight: 500; color: var(--ink); line-height: 1.2;">Venkat<br/>Tummala</div>
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--ink-3); letter-spacing: 0.06em; margin-top: 10px;"><span style="color: var(--ink-4);">ASU · </span>1236842219</div>
+        </div>
+        <div style="border-top: 1px solid var(--rule); padding-top: 14px;">
+          <div style="font-family: 'Inter Tight'; font-size: 22px; font-weight: 500; color: var(--ink); line-height: 1.2;">Anish Paul<br/>Singareddy</div>
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--ink-3); letter-spacing: 0.06em; margin-top: 10px;"><span style="color: var(--ink-4);">ASU · </span>1237522730</div>
+        </div>
+        <div style="border-top: 1px solid var(--rule); padding-top: 14px;">
+          <div style="font-family: 'Inter Tight'; font-size: 22px; font-weight: 500; color: var(--ink); line-height: 1.2;">Manan<br/>Santoki</div>
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--ink-3); letter-spacing: 0.06em; margin-top: 10px;"><span style="color: var(--ink-4);">ASU · </span>1237462072</div>
+        </div>
+        <div style="border-top: 1px solid var(--rule); padding-top: 14px;">
+          <div style="font-family: 'Inter Tight'; font-size: 22px; font-weight: 500; color: var(--ink); line-height: 1.2;">Tanmay<br/>Godse</div>
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--ink-3); letter-spacing: 0.06em; margin-top: 10px;"><span style="color: var(--ink-4);">ASU · </span>1234028005</div>
+        </div>
+        <div style="border-top: 1px solid var(--rule); padding-top: 14px;">
+          <div style="font-family: 'Inter Tight'; font-size: 22px; font-weight: 500; color: var(--ink); line-height: 1.2;">Charith Reddy<br/>Bandi</div>
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--ink-3); letter-spacing: 0.06em; margin-top: 10px;"><span style="color: var(--ink-4);">ASU · </span>1236775152</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="footer">
+    <span>01 / 06</span>
+    <span class="mid">Zero-Shot Alignment via Retrieval</span>
+    <span>krr · team · asu</span>
+  </div>
+</section>
+
+
+<!-- ==================== SLIDE 2 — PROBLEM ==================== -->
+<section data-label="02 Problem">
+  <div class="frame">
+    <div class="topbar">
+      <span><span class="dot">●</span>01 · the problem</span>
+      <span class="right">45 s</span>
+    </div>
+    <div class="hline"></div>
+
+    <div style="margin-top: 56px; display: flex; flex-direction: column; gap: 20px;">
+      <div class="eyebrow" style="margin:0;">§1 The setup</div>
+      <h2 class="title">Per-user fine-tuning doesn't scale.</h2>
+      <div class="keymsg">Labelled per-user data, VRAM, training loops, and a shared base model that silently drifts with every new tenant. We want style alignment to be a <span style="font-style: italic; color: var(--accent);">retrieval</span> problem, not a training problem.</div>
+    </div>
+
+    <div class="panels" style="margin-top: 36px; margin-bottom: 8px;">
+      <!-- LEFT: the bad pattern -->
+      <div class="panel bad">
+        <div class="plabel">
+          <span>A · per-user fine-tune</span>
+          <span class="tag">doesn't scale</span>
+        </div>
+        <div class="ptitle">N users → N fine-tuned models</div>
+        <svg viewBox="0 0 560 360" preserveAspectRatio="xMidYMid meet">
+          <!-- users -->
+          <g font-family="JetBrains Mono, monospace" font-size="14" fill="#6e6e64" letter-spacing="0.1em">
+            <text x="20" y="42">USERS</text>
+          </g>
+          <g>
+            <!-- 4 users -->
+            <g transform="translate(20,60)">
+              <circle cx="16" cy="16" r="16" fill="#d6d1c2"/><text x="40" y="21" font-family="Inter Tight" font-size="16" fill="#14140f">u₁</text>
+            </g>
+            <g transform="translate(20,110)">
+              <circle cx="16" cy="16" r="16" fill="#d6d1c2"/><text x="40" y="21" font-family="Inter Tight" font-size="16" fill="#14140f">u₂</text>
+            </g>
+            <g transform="translate(20,160)">
+              <circle cx="16" cy="16" r="16" fill="#d6d1c2"/><text x="40" y="21" font-family="Inter Tight" font-size="16" fill="#14140f">u₃</text>
+            </g>
+            <g transform="translate(20,210)">
+              <circle cx="16" cy="16" r="16" fill="#d6d1c2"/><text x="40" y="21" font-family="Inter Tight" font-size="16" fill="#14140f">u₄</text>
+            </g>
+            <g transform="translate(20,260)">
+              <circle cx="16" cy="16" r="16" fill="#d6d1c2"/><text x="40" y="21" font-family="Inter Tight" font-size="16" fill="#14140f">uₙ</text>
+            </g>
+          </g>
+          <!-- arrows to models -->
+          <g stroke="#a6a69a" stroke-width="1.25" fill="none">
+            <path d="M 80 76 L 230 76"/>
+            <path d="M 80 126 L 230 126"/>
+            <path d="M 80 176 L 230 176"/>
+            <path d="M 80 226 L 230 226"/>
+            <path d="M 80 276 L 230 276"/>
+          </g>
+          <!-- per-user models (stacked GPU racks) -->
+          <g font-family="JetBrains Mono, monospace" font-size="14" fill="#6e6e64" letter-spacing="0.1em">
+            <text x="230" y="42">MODELS + GPUS</text>
+          </g>
+          <g font-family="JetBrains Mono, monospace" font-size="12" fill="#14140f">
+            <g transform="translate(230,60)">
+              <rect width="200" height="32" fill="#ece8df" stroke="#d6d1c2"/>
+              <text x="12" y="20">model_u₁ · 7B · LoRA</text>
+              <rect x="180" y="6" width="14" height="20" fill="#c7502c" opacity="0.7"/>
+            </g>
+            <g transform="translate(230,110)">
+              <rect width="200" height="32" fill="#ece8df" stroke="#d6d1c2"/>
+              <text x="12" y="20">model_u₂ · 7B · LoRA</text>
+              <rect x="180" y="6" width="14" height="20" fill="#c7502c" opacity="0.7"/>
+            </g>
+            <g transform="translate(230,160)">
+              <rect width="200" height="32" fill="#ece8df" stroke="#d6d1c2"/>
+              <text x="12" y="20">model_u₃ · 7B · LoRA</text>
+              <rect x="180" y="6" width="14" height="20" fill="#c7502c" opacity="0.7"/>
+            </g>
+            <g transform="translate(230,210)">
+              <rect width="200" height="32" fill="#ece8df" stroke="#d6d1c2"/>
+              <text x="12" y="20">model_u₄ · 7B · LoRA</text>
+              <rect x="180" y="6" width="14" height="20" fill="#c7502c" opacity="0.7"/>
+            </g>
+            <g transform="translate(230,260)">
+              <rect width="200" height="32" fill="#ece8df" stroke="#d6d1c2"/>
+              <text x="12" y="20">model_uₙ · 7B · LoRA</text>
+              <rect x="180" y="6" width="14" height="20" fill="#c7502c" opacity="0.7"/>
+            </g>
+          </g>
+          <!-- failures pointing right -->
+          <g font-family="JetBrains Mono, monospace" font-size="11" fill="#c7502c" letter-spacing="0.05em">
+            <text x="440" y="80">· VRAM / $$</text>
+            <text x="440" y="130">· labels</text>
+            <text x="440" y="180">· slow iter</text>
+            <text x="440" y="230">· forgetting</text>
+            <text x="440" y="280">· drift</text>
+          </g>
+        </svg>
+        <div class="caption">Cost scales with users. The base drifts.</div>
+      </div>
+
+      <!-- RIGHT: our pattern -->
+      <div class="panel good">
+        <div class="plabel">
+          <span>B · retrieval-composed styles</span>
+          <span class="tag" style="color: var(--accent);">zero-shot</span>
+        </div>
+        <div class="ptitle">N users → one frozen base + shared style bank</div>
+        <svg viewBox="0 0 560 360" preserveAspectRatio="xMidYMid meet">
+          <g font-family="JetBrains Mono, monospace" font-size="14" fill="#6e6e64" letter-spacing="0.1em">
+            <text x="20" y="42">USERS</text>
+            <text x="240" y="42">SHARED STACK</text>
+          </g>
+          <!-- users -->
+          <g>
+            <g transform="translate(20,60)"><circle cx="16" cy="16" r="16" fill="#d6d1c2"/><text x="40" y="21" font-family="Inter Tight" font-size="16" fill="#14140f">u₁</text></g>
+            <g transform="translate(20,110)"><circle cx="16" cy="16" r="16" fill="#d6d1c2"/><text x="40" y="21" font-family="Inter Tight" font-size="16" fill="#14140f">u₂</text></g>
+            <g transform="translate(20,160)"><circle cx="16" cy="16" r="16" fill="#d6d1c2"/><text x="40" y="21" font-family="Inter Tight" font-size="16" fill="#14140f">u₃</text></g>
+            <g transform="translate(20,210)"><circle cx="16" cy="16" r="16" fill="#d6d1c2"/><text x="40" y="21" font-family="Inter Tight" font-size="16" fill="#14140f">u₄</text></g>
+            <g transform="translate(20,260)"><circle cx="16" cy="16" r="16" fill="#d6d1c2"/><text x="40" y="21" font-family="Inter Tight" font-size="16" fill="#14140f">uₙ</text></g>
+          </g>
+          <!-- arrows converge to single retrieval -->
+          <g stroke="#1f4a48" stroke-width="1.25" fill="none">
+            <path d="M 80 76 C 150 76, 180 170, 240 170"/>
+            <path d="M 80 126 C 150 126, 180 170, 240 170"/>
+            <path d="M 80 176 L 240 176"/>
+            <path d="M 80 226 C 150 226, 180 170, 240 170"/>
+            <path d="M 80 276 C 150 276, 180 170, 240 170"/>
+          </g>
+          <!-- retrieval box -->
+          <g>
+            <rect x="240" y="148" width="150" height="60" fill="#fbf9f3" stroke="#1f4a48"/>
+            <text x="252" y="172" font-family="Inter Tight" font-size="16" font-weight="500" fill="#1f4a48">retrieve(query)</text>
+            <text x="252" y="194" font-family="JetBrains Mono, monospace" font-size="12" fill="#6e6e64">FAISS · MiniLM</text>
+          </g>
+          <!-- style bank -->
+          <g>
+            <g transform="translate(240,60)">
+              <rect width="150" height="70" fill="#fbf9f3" stroke="#d6d1c2"/>
+              <text x="12" y="22" font-family="Inter Tight" font-size="15" fill="#14140f">style bank</text>
+              <text x="12" y="42" font-family="JetBrains Mono, monospace" font-size="11" fill="#6e6e64">10 cards · jsonl</text>
+              <g transform="translate(12,52)">
+                <rect width="14" height="10" fill="#c7502c" opacity="0.6"/>
+                <rect x="18" width="14" height="10" fill="#1f4a48" opacity="0.6"/>
+                <rect x="36" width="14" height="10" fill="#6e6e64" opacity="0.6"/>
+                <rect x="54" width="14" height="10" fill="#c7502c" opacity="0.4"/>
+                <rect x="72" width="14" height="10" fill="#1f4a48" opacity="0.4"/>
+                <rect x="90" width="14" height="10" fill="#6e6e64" opacity="0.4"/>
+              </g>
+            </g>
+          </g>
+          <g stroke="#d6d1c2" stroke-width="1" fill="none" stroke-dasharray="3 3">
+            <path d="M 315 130 L 315 148"/>
+          </g>
+          <!-- frozen base -->
+          <g>
+            <rect x="410" y="148" width="130" height="60" fill="#efece1" stroke="#1f4a48" stroke-width="1.5"/>
+            <text x="422" y="172" font-family="Inter Tight" font-size="16" font-weight="500" fill="#14140f">frozen base</text>
+            <text x="422" y="194" font-family="JetBrains Mono, monospace" font-size="12" fill="#6e6e64">Ollama · any model</text>
+          </g>
+          <g stroke="#1f4a48" stroke-width="1.25" fill="none">
+            <path d="M 390 178 L 410 178"/>
+            <polygon points="410,178 404,175 404,181" fill="#1f4a48"/>
+          </g>
+          <!-- wins -->
+          <g font-family="JetBrains Mono, monospace" font-size="12" fill="#1f4a48" letter-spacing="0.05em">
+            <text x="240" y="250">·  O(1) params across users</text>
+            <text x="240" y="272">·  base never mutates</text>
+            <text x="240" y="294">·  add style = add one card</text>
+          </g>
+        </svg>
+        <div class="caption">One base. One bank. Cost constant in users.</div>
+      </div>
+    </div>
+  </div>
+  <div class="footer">
+    <span>02 / 06</span>
+    <span class="mid">The problem with per-user fine-tuning</span>
+    <span>krr · team · asu</span>
+  </div>
+</section>
+
+
+<!-- ==================== SLIDE 3 — METHOD (RETRIEVAL + KSJ) ==================== -->
+<section data-label="03 Method">
+  <div class="frame">
+    <div class="topbar">
+      <span><span class="dot">●</span>02 · the method</span>
+      <span class="right">75 s</span>
+    </div>
+    <div class="hline"></div>
+
+    <div style="margin-top: 28px;">
+      <div class="eyebrow" style="margin:0 0 14px 0;">§2 Retrieval + Knowledge / Style / Judge</div>
+      <h2 class="title" style="font-size: 60px;">Retrieve a style card, then run the KSJ loop.</h2>
+      <div class="keymsg" style="font-size: 26px;">Ollama for all three roles. Encode preference with <span class="mono">all-MiniLM-L6-v2</span>, FAISS <span class="mono accent">IndexFlatIP</span> picks top-K. Four action signals; <span class="mono">MAX_REVISIONS = 2</span>; always emit the best candidate seen. No LLM training — the modules are pre-authored style cards.</div>
+    </div>
+
+    <div style="margin-top: 20px; display: grid; grid-template-columns: 1.6fr 1fr; gap: 44px; flex: 1; min-height: 0;">
+      <!-- LEFT: KSJ diagram -->
+      <div class="ksj" style="min-height: 0;">
+        <svg viewBox="0 0 920 620" preserveAspectRatio="xMidYMid meet" style="width: 100%; height: 100%; display: block;">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#14140f"/>
+            </marker>
+            <marker id="arrow-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#1f4a48"/>
+            </marker>
+            <marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#c7502c"/>
+            </marker>
+          </defs>
+
+          <!-- preference / query -->
+          <g transform="translate(20,40)">
+            <rect width="180" height="64" fill="#fbf9f3" stroke="#a6a69a"/>
+            <text x="16" y="26" class="node-sub">INPUT · query + preference</text>
+            <text x="16" y="52" class="node-label">free text</text>
+          </g>
+
+          <!-- retrieve -->
+          <g transform="translate(20,170)">
+            <rect width="180" height="84" fill="#fbf9f3" stroke="#1f4a48" stroke-width="1.5"/>
+            <text x="16" y="26" class="node-sub" fill="#1f4a48">RETRIEVE · MiniLM + FAISS</text>
+            <text x="16" y="52" class="node-label">style card</text>
+            <text x="16" y="74" font-family="JetBrains Mono, monospace" font-size="12" fill="#6e6e64">top-K · IndexFlatIP</text>
+          </g>
+
+          <g stroke="#14140f" stroke-width="1.5" fill="none" marker-end="url(#arrow)">
+            <path d="M 110 104 L 110 170"/>
+          </g>
+
+          <!-- Knowledge -->
+          <g transform="translate(280,40)">
+            <rect width="220" height="110" fill="#efece1" stroke="#1f4a48" stroke-width="1.5"/>
+            <text x="18" y="28" class="node-sub" fill="#1f4a48">LLM · ROLE 01</text>
+            <text x="18" y="58" font-family="Inter Tight" font-size="28" font-weight="500" fill="#14140f">Knowledge</text>
+            <text x="18" y="86" font-family="JetBrains Mono, monospace" font-size="13" fill="#6e6e64">→ neutral factual draft</text>
+          </g>
+
+          <!-- Style -->
+          <g transform="translate(560,40)">
+            <rect width="220" height="110" fill="#efece1" stroke="#1f4a48" stroke-width="1.5"/>
+            <text x="18" y="28" class="node-sub" fill="#1f4a48">LLM · ROLE 02</text>
+            <text x="18" y="58" font-family="Inter Tight" font-size="28" font-weight="500" fill="#14140f">Style</text>
+            <text x="18" y="86" font-family="JetBrains Mono, monospace" font-size="13" fill="#6e6e64">→ rewrite w/ card</text>
+          </g>
+
+          <!-- Judge -->
+          <g transform="translate(560,220)">
+            <rect width="220" height="130" fill="#efece1" stroke="#1f4a48" stroke-width="1.5"/>
+            <text x="18" y="28" class="node-sub" fill="#1f4a48">LLM · ROLE 03</text>
+            <text x="18" y="58" font-family="Inter Tight" font-size="28" font-weight="500" fill="#14140f">Judge</text>
+            <text x="18" y="88" font-family="JetBrains Mono, monospace" font-size="13" fill="#6e6e64">styleScore ∈ 1..5</text>
+            <text x="18" y="108" font-family="JetBrains Mono, monospace" font-size="13" fill="#6e6e64">cosine ∈ [0,1]</text>
+          </g>
+
+          <!-- arrows K→S, S→J, retrieve→S -->
+          <g stroke="#14140f" stroke-width="1.5" fill="none" marker-end="url(#arrow)">
+            <path d="M 200 90 L 280 90"/>
+            <path d="M 500 90 L 560 90"/>
+            <path d="M 670 150 L 670 220"/>
+            <path d="M 200 196 C 360 196, 360 78, 560 78" stroke-dasharray="3 3"/>
+          </g>
+
+          <g>
+            <text x="210" y="80" class="arrow-label">query</text>
+            <text x="510" y="110" class="arrow-label">draft + card</text>
+            <text x="680" y="190" class="arrow-label">candidate</text>
+            <text x="360" y="188" class="arrow-label">card</text>
+          </g>
+
+          <!-- Four actions -->
+          <g transform="translate(20,300)">
+            <text x="0" y="0" class="node-sub">VERDICT · 4 ACTIONS</text>
+            <g transform="translate(0,20)">
+              <rect width="200" height="46" fill="#1f4a48"/>
+              <text x="18" y="30" font-family="JetBrains Mono, monospace" font-size="15" fill="#f5f2ec" letter-spacing="0.05em">accept</text>
+            </g>
+            <g transform="translate(0,80)">
+              <rect width="200" height="46" fill="#fbf9f3" stroke="#14140f"/>
+              <text x="18" y="30" font-family="JetBrains Mono, monospace" font-size="15" fill="#14140f" letter-spacing="0.05em">revise_style</text>
+            </g>
+            <g transform="translate(0,140)">
+              <rect width="200" height="46" fill="#fbf9f3" stroke="#c7502c"/>
+              <text x="18" y="30" font-family="JetBrains Mono, monospace" font-size="15" fill="#c7502c" letter-spacing="0.05em">content_drift</text>
+            </g>
+            <g transform="translate(0,200)">
+              <rect width="200" height="46" fill="#fbf9f3" stroke="#c7502c"/>
+              <text x="18" y="30" font-family="JetBrains Mono, monospace" font-size="15" fill="#c7502c" letter-spacing="0.05em">wrong_style</text>
+            </g>
+          </g>
+
+          <!-- Judge → accept pill (the one clean emit edge; other 3 actions described in the right-hand list) -->
+          <g fill="none">
+            <path d="M 560 305 L 210 328" stroke="#1f4a48" stroke-width="1.5" marker-end="url(#arrow-accent)"/>
+            <text x="290" y="315" class="arrow-label" fill="#1f4a48" font-weight="500">emit</text>
+          </g>
+
+          <!-- orchestrator note -->
+          <g transform="translate(560,420)">
+            <rect width="360" height="180" fill="#fbf9f3" stroke="#d6d1c2"/>
+            <text x="18" y="30" font-family="JetBrains Mono, monospace" font-size="13" fill="#6e6e64" letter-spacing="0.12em">ORCHESTRATOR · run()</text>
+            <text x="18" y="62" font-family="Inter Tight" font-size="19" fill="#14140f">while attempt &lt; MAX_REVISIONS:</text>
+            <text x="36" y="92" font-family="JetBrains Mono, monospace" font-size="13" fill="#3a3a34">act = judge.evaluate(cand)</text>
+            <text x="36" y="116" font-family="JetBrains Mono, monospace" font-size="13" fill="#3a3a34">route(act); track_best(cand)</text>
+            <text x="18" y="152" font-family="Inter Tight" font-size="18" fill="#1f4a48" font-style="italic">return best_seen</text>
+          </g>
+        </svg>
+      </div>
+
+      <!-- RIGHT: style card + action edges -->
+      <div style="display: flex; flex-direction: column; gap: 16px; min-height: 0;">
+        <div class="eyebrow" style="margin:0;">Style card · one file per style</div>
+        <div class="stylecard" style="font-size: 15px; padding: 16px 20px; line-height: 1.6;">
+<span class="k">{</span><br/>
+&nbsp;&nbsp;<span class="k">"id":</span> <span class="str">"casual_friendly"</span>,<br/>
+&nbsp;&nbsp;<span class="k">"tags":</span> [<span class="str">"casual"</span>, <span class="str">"warm"</span>],<br/>
+&nbsp;&nbsp;<span class="k">"instruction":</span> <span class="str">"conversational, contractions…"</span>,<br/>
+&nbsp;&nbsp;<span class="k">"examples":</span> [ …2 prompts+answers… ]<br/>
+<span class="k">}</span>
+        </div>
+
+        <div class="eyebrow" style="margin: 6px 0 0 0;">Four action edges</div>
+        <ul class="numbul" style="font-size: 22px;">
+          <li style="padding: 12px 0;"><span class="n">01</span><span class="t"><b>accept</b> <span class="muted">→ emit &amp; return</span></span></li>
+          <li style="padding: 12px 0;"><span class="n">02</span><span class="t"><b>revise_style</b> <span class="muted">→ harder prompt, keep card</span></span></li>
+          <li style="padding: 12px 0;"><span class="n">03</span><span class="t"><b>content_drift</b> <span class="muted">→ re-emphasize draft facts</span></span></li>
+          <li style="padding: 12px 0;"><span class="n">04</span><span class="t"><b>wrong_style</b> <span class="muted">→ advance to top-K next</span></span></li>
+        </ul>
+        <div class="small" style="font-family: 'JetBrains Mono', monospace; color: var(--ink-4); margin-top: 4px;">judge/agents/orchestrator.py : 43–110</div>
+      </div>
+    </div>
+  </div>
+  <div class="footer">
+    <span>03 / 06</span>
+    <span class="mid">Retrieval + the Knowledge / Style / Judge loop</span>
+    <span>krr · team · asu</span>
+  </div>
+</section>
+
+
+<!-- ==================== SLIDE 4 — RATIONALE ==================== -->
+<section data-label="04 Rationale">
+  <div class="frame">
+    <div class="topbar">
+      <span><span class="dot">●</span>03 · the reasoning</span>
+      <span class="right">60 s</span>
+    </div>
+    <div class="hline"></div>
+
+    <div style="margin-top: 36px;">
+      <div class="eyebrow" style="margin:0 0 18px 0;">§3 Rationale</div>
+      <h2 class="title">Each role is load-bearing.</h2>
+      <div class="keymsg">Every design choice kills a specific failure mode we saw in the single-LLM baseline. Each is one env var or one file away from being swapped.</div>
+    </div>
+
+    <div class="quads" style="margin-top: 44px;">
+      <div class="quad">
+        <div class="qnum">01 — DECOUPLING</div>
+        <div class="qchoice">Separate draft from restyle.</div>
+        <div class="qdivider"><span>prevents →</span><span class="line"></span></div>
+        <div class="qfail">Style LLM hallucinating facts to appear more stylistic when it has to draft and stylize in the same pass.</div>
+        <div class="qcite">Knowledge &amp; Style LLMs · judge/agents/knowledge.py · style.py</div>
+      </div>
+      <div class="quad">
+        <div class="qnum">02 — CROSS-FAMILY JUDGE</div>
+        <div class="qchoice">Judge on a different model family.</div>
+        <div class="qdivider"><span>prevents →</span><span class="line"></span></div>
+        <div class="qfail">Self-preference bias: a judge from family F systematically over-scores F's own outputs.</div>
+        <div class="qcite">Zheng et al. 2023 · env : JUDGE_MODEL=mistral:7b-instruct</div>
+      </div>
+      <div class="quad">
+        <div class="qnum">03 — LOCAL COSINE</div>
+        <div class="qchoice">Content check outside the judge LLM.</div>
+        <div class="qdivider"><span>prevents →</span><span class="line"></span></div>
+        <div class="qfail">Hallucinations that slip past the judge's LLM call but that sentence embeddings catch.</div>
+        <div class="qcite">CONTENT_PRESERVATION_MIN = 0.70 · sentence-transformers</div>
+      </div>
+      <div class="quad">
+        <div class="qnum">04 — BOUNDED REVISION</div>
+        <div class="qchoice">Cap the loop at MAX_REVISIONS.</div>
+        <div class="qdivider"><span>prevents →</span><span class="line"></span></div>
+        <div class="qfail">Pathological prompts looping forever; unbounded inference cost under adversarial input.</div>
+        <div class="qcite">MAX_REVISIONS = 2 · always-emit-best-seen</div>
+      </div>
+    </div>
+  </div>
+  <div class="footer">
+    <span>04 / 06</span>
+    <span class="mid">Why each role is load-bearing</span>
+    <span>krr · team · asu</span>
+  </div>
+</section>
+
+
+<!-- ==================== SLIDE 5 — RESULTS (auditable triple + numbers) ==================== -->
+<section data-label="05 Results">
+  <div class="frame">
+    <div class="topbar">
+      <span><span class="dot">●</span>04 · results</span>
+      <span class="right">75 s · n = 20</span>
+    </div>
+    <div class="hline"></div>
+
+    <div style="margin-top: 32px;">
+      <div class="eyebrow" style="margin:0 0 14px 0;">§4 Results · auditable triple</div>
+      <h2 class="title" style="font-size: 60px;">3.25× lift — every output is a triple.</h2>
+      <div class="keymsg" style="font-size: 26px;">Each final response ties to a <span class="accent">card id</span>, a <span class="accent">content cosine</span>, and a <span class="accent">judge verdict</span> — persisted to <span class="mono">results/traces/</span>. Add a style = one card. Swap the judge = one env var.</div>
+    </div>
+
+    <div class="chart-area" style="margin-top: 28px;">
+      <!-- BAR CHART -->
+      <div style="display:flex; flex-direction:column;">
+        <div class="eyebrow" style="margin:0 0 12px 0;">Pairwise wins · 3-LLM pipeline vs same Ollama model, no retrieval · n = 20</div>
+        <div class="bars" style="padding: 20px 0 32px 0; gap: 28px;">
+          <div class="bar-row hero">
+            <div class="lab">3-LLM + retrieval<span class="sub">KSJ loop · ours</span></div>
+            <div class="bar-track"><div class="bar-fill" style="width: 65%;"></div></div>
+            <div class="bar-val">13</div>
+          </div>
+          <div class="bar-row mid">
+            <div class="lab">Ollama base · no retrieval<span class="sub">same model, direct query</span></div>
+            <div class="bar-track"><div class="bar-fill" style="width: 35%;"></div></div>
+            <div class="bar-val">7</div>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 280px 1fr 80px; gap: 20px; font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--ink-4); letter-spacing: 0.1em; margin-top: -12px;">
+          <div></div>
+          <div style="display:flex; justify-content: space-between; border-top: 1px solid var(--rule); padding-top: 6px;">
+            <span>0</span><span>5</span><span>10</span><span>15</span><span>20</span>
+          </div>
+          <div></div>
+        </div>
+
+        <!-- biggest movers -->
+        <div style="margin-top: 30px;">
+          <div class="eyebrow" style="margin:0 0 10px 0;">Biggest movers · per-style win rate, 3-LLM vs base</div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
+            <div style="border: 1px solid var(--rule); background: #fbf9f3; padding: 14px 16px;">
+              <div class="mono" style="font-size: 13px; color: var(--ink-4); letter-spacing: 0.08em;">casual_friendly</div>
+              <div style="font-size: 22px; margin-top: 6px;"><span class="mono" style="color: var(--ink-3);">0.15</span> → <span class="mono" style="color: var(--accent); font-weight: 600;">1.00</span></div>
+            </div>
+            <div style="border: 1px solid var(--rule); background: #fbf9f3; padding: 14px 16px;">
+              <div class="mono" style="font-size: 13px; color: var(--ink-4); letter-spacing: 0.08em;">debate_critical</div>
+              <div style="font-size: 22px; margin-top: 6px;"><span class="mono" style="color: var(--ink-3);">0.15</span> → <span class="mono" style="color: var(--accent); font-weight: 600;">1.00</span></div>
+            </div>
+            <div style="border: 1px solid var(--rule); background: #fbf9f3; padding: 14px 16px;">
+              <div class="mono" style="font-size: 13px; color: var(--ink-4); letter-spacing: 0.08em;">socratic_teaching</div>
+              <div style="font-size: 22px; margin-top: 6px;"><span class="mono" style="color: var(--ink-3);">0.17</span> → <span class="mono" style="color: var(--accent); font-weight: 600;">0.75</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- METRICS + CAVEATS -->
+      <div style="display:flex; flex-direction:column;">
+        <div class="metrics">
+          <div class="mhead">METRICS · MEAN ACROSS 20</div>
+          <div class="mrow">
+            <div class="mk">Content cosine <span style="color: var(--ink-4); font-size: 15px;">(≥ 0.70 on all 20)</span></div>
+            <div class="mv">0.80</div>
+          </div>
+          <div class="mrow">
+            <div class="mk">Judge score<span style="color: var(--ink-4); font-size: 15px;"> (1–5)</span></div>
+            <div class="mv">4.9<span class="unit">/ 5</span></div>
+          </div>
+          <div class="mrow">
+            <div class="mk">Revisions per item</div>
+            <div class="mv">0.05</div>
+          </div>
+          <div class="mrow">
+            <div class="mk">Retrieval miss rate</div>
+            <div class="mv">5<span class="unit">/ 20</span></div>
+          </div>
+        </div>
+
+        <div class="caveat">
+          Caveat 1 — self-preference: the reported run had Knowledge, Style &amp; Judge on the same Ollama model, so the judge rubber-stamped at 4.9/5. The new config routes Judge to a different family (<span class="mono">rnj-1:latest</span>) to fix this.
+        </div>
+        <div class="caveat" style="margin-top: 16px;">
+          Caveat 2 — retrieval ceiling: 5/20 items retrieve the wrong card (MiniLM top-1 = 75%). Fixing this is the next lever.
+        </div>
+
+        <div class="small" style="margin-top: 20px; font-family: 'JetBrains Mono', monospace; color: var(--ink-4);">
+          src · results/evaluation_results_3llm.json · results/traces/
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="footer">
+    <span>05 / 06</span>
+    <span class="mid">Results · auditable · n = 20</span>
+    <span>krr · team · asu</span>
+  </div>
+</section>
+
+
+<!-- ==================== SLIDE 6 — DEMO + NEXT ==================== -->
+<section data-label="06 Demo and next">
+  <div class="frame">
+    <div class="topbar">
+      <span><span class="dot">●</span>05 · demo + next</span>
+      <span class="right">45 s</span>
+    </div>
+    <div class="hline"></div>
+
+    <div style="margin-top: 36px;">
+      <div class="eyebrow" style="margin:0 0 18px 0;">§5 Demo &amp; roadmap</div>
+      <h2 class="title">Live SSE trace, then three unlocks.</h2>
+      <div class="keymsg">The web UI streams every step over Server-Sent Events — retrieval, draft, each style attempt, each judge verdict, final. Same trace we persist offline for eval: one renderer, two data sources.</div>
+    </div>
+
+    <div class="demo-wrap" style="margin-top: 40px;">
+      <!-- BROWSER MOCK -->
+      <div class="browser">
+        <div class="bar">
+          <div class="dots"><i></i><i></i><i></i></div>
+          <div class="url">localhost:3000 / playground</div>
+          <span style="color: var(--accent);">● streaming</span>
+        </div>
+        <div class="body">
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--ink-4); letter-spacing: 0.12em;">PREFERENCE</div>
+          <div style="font-family: 'Source Serif 4', serif; font-style: italic; font-size: 20px; color: var(--ink-2); margin-top: -8px;">"casual and friendly, like talking to a buddy"</div>
+
+          <div class="sse-step">
+            <div class="ss-t">01 retrieve</div>
+            <div class="ss-b"><b>casual_friendly</b> · cos 0.87 &nbsp;·&nbsp; eli5_simple 0.71 &nbsp;·&nbsp; storytelling 0.64</div>
+            <div class="ss-s">done</div>
+          </div>
+          <div class="sse-step">
+            <div class="ss-t">02 knowledge</div>
+            <div class="ss-b">neutral draft: "Seasons change because Earth's axis is tilted about 23.5 degrees relative to its orbital plane…"</div>
+            <div class="ss-s">done</div>
+          </div>
+          <div class="sse-step streaming">
+            <div class="ss-t">03 style · t0</div>
+            <div class="ss-b"><b>rewrite:</b> <span style="font-family: 'Source Serif 4', serif; font-size: 17px; color: var(--ink);">Okay so here's the deal — Earth's a little tipped, about 23 and a half degrees…<span class="caret"></span></span></div>
+            <div class="ss-s">streaming</div>
+          </div>
+          <div class="sse-step" style="opacity: 0.5;">
+            <div class="ss-t">04 judge</div>
+            <div class="ss-b" style="color: var(--ink-4);">waiting… <span class="mono" style="font-size: 13px;">styleScore + content_cos + action</span></div>
+            <div class="ss-s" style="background: var(--paper-3); color: var(--ink-4);">queued</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ROADMAP -->
+      <div>
+        <div class="eyebrow" style="margin: 0 0 12px 0;">Next · three unlocks</div>
+        <div class="roadmap">
+          <div class="rd-item">
+            <div class="rn">01</div>
+            <div class="rt">
+              Judge on a different family · <span class="code">rnj-1:latest</span>
+              <span class="sub">Breaks self-preference; re-run eval to see the revision loop actually fire.</span>
+            </div>
+          </div>
+          <div class="rd-item">
+            <div class="rn">02</div>
+            <div class="rt">
+              Fix the 5 / 20 retrieval misses
+              <span class="sub">Larger bank, harder exemplars, or judge-in-the-loop rerank from top-K.</span>
+            </div>
+          </div>
+          <div class="rd-item">
+            <div class="rn">03</div>
+            <div class="rt">
+              Grow the style bank
+              <span class="sub">Adding a style is one JSONL line — no retraining. The bank is where contribution scales.</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top: 36px; font-family: 'Source Serif 4', serif; font-style: italic; font-size: 22px; color: var(--ink-3); line-height: 1.4;">
+          Thanks — questions welcome. Every run's trace JSON is in <span class="mono" style="font-style: normal;">results/traces/</span> if you want to audit a specific output.
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="footer">
+    <span>06 / 06</span>
+    <span class="mid">Demo &amp; next steps · KRR team</span>
+    <span>krr · team · asu</span>
+  </div>
+</section>
+
+</deck-stage>
+
+<script src="deck-stage.js"></script>
+</body>
+</html>

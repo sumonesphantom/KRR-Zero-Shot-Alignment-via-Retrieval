@@ -16,6 +16,9 @@ Loop per request:
   5. Cap at MAX_REVISIONS total Style/Judge rounds; emit best candidate.
 """
 
+from dataclasses import asdict
+from typing import Callable, Optional
+
 from retrieve import StyleRetriever
 from agents.ollama_client import OllamaClient
 from agents.knowledge import KnowledgeLLM
@@ -40,7 +43,34 @@ class Orchestrator:
             client=OllamaClient(JUDGE_MODEL),
         )
 
-    def run(self, query: str, preference: str, top_k: int = TOP_K) -> PipelineTrace:
+    def run(
+        self,
+        query: str,
+        preference: str,
+        top_k: int = TOP_K,
+        on_event: Optional[Callable[[dict], None]] = None,
+    ) -> PipelineTrace:
+        def _to_camel(s: str) -> str:
+            parts = s.split("_")
+            return parts[0] + "".join(p.title() for p in parts[1:])
+
+        def _camel_dict(d):
+            """Recursively convert dict keys from snake_case → camelCase.
+            Non-dict values pass through; lists are mapped element-wise."""
+            if isinstance(d, dict):
+                return {_to_camel(k): _camel_dict(v) for k, v in d.items()}
+            if isinstance(d, list):
+                return [_camel_dict(x) for x in d]
+            return d
+
+        def _emit(type_: str, **payload):
+            if on_event is None:
+                return
+            try:
+                on_event({"type": type_, **_camel_dict(payload)})
+            except Exception as e:
+                print(f"[orchestrator] on_event callback raised: {e!r}")
+
         retrieval = self.retriever.retrieve(preference, top_k=top_k)
         trace = PipelineTrace(
             query=query,
@@ -52,10 +82,15 @@ class Orchestrator:
             ],
             draft="",
         )
+        _emit("retrieval", retrieval=trace.retrieval)
 
         print(f"[orchestrator] Knowledge drafting...")
-        draft = self.knowledge.draft(query)
+        draft = self.knowledge.draft(
+            query,
+            on_chunk=(lambda delta: _emit("draft_delta", delta=delta)) if on_event else None,
+        )
         trace.draft = draft
+        _emit("draft", draft=draft)
 
         style_idx = 0
         attempt_for_style = 0
@@ -66,14 +101,38 @@ class Orchestrator:
             style_card = retrieval[style_idx]["card"]
             style_id = style_card["id"]
             print(f"[orchestrator] Style '{style_id}' attempt {attempt_for_style}")
+            _emit(
+                "style_attempt_start",
+                attempt=total_revisions,
+                attemptForStyle=attempt_for_style,
+                styleId=style_id,
+            )
 
+            _attempt_captured = total_revisions
+            _style_id_captured = style_id
             styled = self.style.restyle(
-                draft, style_card, preference, attempt=attempt_for_style
+                draft, style_card, preference, attempt=attempt_for_style,
+                on_chunk=(
+                    lambda delta, a=_attempt_captured, sid=_style_id_captured:
+                        _emit("style_delta", attempt=a, styleId=sid, delta=delta)
+                ) if on_event else None,
+            )
+            _emit(
+                "style_attempt",
+                attempt=total_revisions,
+                styleId=style_id,
+                styled=styled,
             )
             verdict = self.judge.evaluate(query, draft, styled, style_card)
             print(
                 f"[orchestrator]   judge: action={verdict.action} "
                 f"style={verdict.style_score}/5 content_cos={verdict.content_cosine:.2f}"
+            )
+            _emit(
+                "judge_verdict",
+                attempt=total_revisions,
+                styleId=style_id,
+                verdict=asdict(verdict),
             )
 
             step = RevisionStep(
@@ -107,6 +166,12 @@ class Orchestrator:
         trace.final_style_id = best.style_id
         trace.final_output = best.styled
         trace.final_verdict = best.verdict
+        _emit(
+            "final",
+            finalStyleId=trace.final_style_id,
+            finalOutput=trace.final_output,
+            finalVerdict=asdict(trace.final_verdict),
+        )
         return trace
 
 

@@ -1,13 +1,11 @@
-"""Shared configuration for the 3-LLM (Knowledge / Style / Judge) pipeline.
+"""Shared configuration for the Knowledge / Style / Judge pipeline.
 
-Inference runs through Ollama. Make sure the models below are pulled:
+All LLM inference runs through Ollama. Sentence-transformers (MiniLM) runs
+locally for FAISS retrieval and for the judge's content-preservation cosine.
 
-    ollama pull llama3.1:8b-instruct-q4_K_M
-    ollama pull mistral:7b-instruct-q4_K_M
-    ollama pull gemma4:e4b
-
-The sentence-transformers embedder still runs locally for FAISS retrieval and
-for the judge's content-preservation cosine.
+Values here are defaults — api/bootstrap/registry.py patches them in-place
+from api/settings.py (which loads .env at an absolute path) before any
+OllamaClient / Orchestrator is constructed. So override via .env, not here.
 """
 
 from pathlib import Path
@@ -18,22 +16,19 @@ PROJECT_ROOT = Path(__file__).parent.parent
 # Shared paths
 STYLE_BANK_DIR = PROJECT_ROOT / "style_bank"
 STYLE_CARDS_PATH = STYLE_BANK_DIR / "style_cards.jsonl"
-ADAPTERS_DIR = STYLE_BANK_DIR / "adapters"
 INDEX_DIR = PROJECT_ROOT / "data"
-TRAINING_DATA_DIR = PROJECT_ROOT / "data" / "training"
 RESULTS_DIR = PROJECT_ROOT / "results"
 TRACES_DIR = RESULTS_DIR / "traces"
 
 # Ollama
 OLLAMA_HOST = "http://localhost:11434"
 
-# Per-role models (Ollama tags).
-# Knowledge and Style use Llama 3.1 8B — strong instruction following, good at
-# faithful rewriting. Judge uses Mistral 7B — different family from the
-# generator, which reduces self-preference bias (Zheng et al. 2023).
-KNOWLEDGE_MODEL = "gemma4:e4b"
-STYLE_MODEL = "gemma4:e4b"
-JUDGE_MODEL = "gemma4:e4b"
+# Per-role models. Knowledge and Style use the same model; Judge uses a
+# different family so it doesn't self-prefer its own outputs (Zheng et al.
+# 2023). Override per-machine via .env.
+KNOWLEDGE_MODEL = "gemma4:latest"
+STYLE_MODEL = "gemma4:latest"
+JUDGE_MODEL = "rnj-1:latest"
 
 # Embedding model for FAISS retrieval + judge content cosine.
 EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
@@ -50,7 +45,6 @@ MAX_REVISIONS = 2
 JUDGE_STYLE_PASS_THRESHOLD = 4     # judge must rate styled ≥ this (1–5) to accept
 CONTENT_PRESERVATION_MIN = 0.70    # cosine(draft, styled) ≥ this or flag drift
 
-# Style-role mode. Current implementation uses "prompt" (retrieved style card
-# injected into the Ollama prompt). "lora" will require retraining adapters on
-# the new base model and converting them to GGUF for Ollama's ADAPTER directive.
-STYLE_MODE = "prompt"  # one of {"prompt", "lora"} — "lora" not yet implemented for Ollama
+# The retrieved style card is injected into the Style LLM's prompt (instruction
+# + few-shot examples). There is no LoRA / adapter path — style is data.
+STYLE_MODE = "prompt"
