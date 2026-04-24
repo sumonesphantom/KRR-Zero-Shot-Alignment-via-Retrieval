@@ -28,6 +28,7 @@ accumulated content. Used by the orchestrator to emit `draft_delta` /
 `style_delta` SSE events to the web UI.
 """
 
+import re
 from typing import Callable, Optional
 
 from ollama import Client
@@ -37,6 +38,85 @@ from config import OLLAMA_HOST, MAX_NEW_TOKENS
 
 NUM_CTX = 8192
 MIN_TEMPERATURE = 0.01
+
+# Thinking-mode leak guard. Even with `think=False`, some models (DeepSeek-R1
+# distills, Qwen3-thinking, some custom Gemma variants like rnj-1) still emit
+# `<think>…</think>` blocks inline in `message.content`. Strip them so every
+# role downstream sees a clean response. We never want CoT in the Knowledge
+# draft, the Style rewrite, or the Judge's JSON verdict.
+_THINK_OPEN = "<think>"
+_THINK_CLOSE = "</think>"
+_THINK_RE = re.compile(re.escape(_THINK_OPEN) + r".*?" + re.escape(_THINK_CLOSE),
+                       flags=re.DOTALL | re.IGNORECASE)
+
+
+def _strip_think_blocks(text: str) -> str:
+    """Remove complete <think>...</think> blocks. Unterminated openers are
+    dropped (everything from <think> to the end of the string)."""
+    if not text:
+        return text
+    text = _THINK_RE.sub("", text)
+    # Drop any unterminated trailing opener — unsafe to render.
+    idx = text.lower().find(_THINK_OPEN)
+    if idx != -1:
+        text = text[:idx]
+    return text.strip()
+
+
+class _ThinkFilter:
+    """Incremental stripper for streamed tokens.
+
+    Maintains a small tail buffer so a `<think>` / `</think>` tag split across
+    chunk boundaries (e.g. "<thi" + "nk>") never leaks through. Unterminated
+    blocks at end-of-stream are dropped in `flush()`.
+    """
+
+    _MAX_HOLD = max(len(_THINK_OPEN), len(_THINK_CLOSE)) - 1
+
+    def __init__(self) -> None:
+        self._in_think = False
+        self._buf = ""
+
+    def feed(self, chunk: str) -> str:
+        if not chunk:
+            return ""
+        self._buf += chunk
+        out: list[str] = []
+        while self._buf:
+            if self._in_think:
+                i = self._buf.find(_THINK_CLOSE)
+                if i == -1:
+                    # Still inside think block; drop buffer but hold a small
+                    # tail in case the close tag is splitting.
+                    hold = min(len(self._buf), self._MAX_HOLD)
+                    self._buf = self._buf[-hold:] if hold else ""
+                    break
+                self._buf = self._buf[i + len(_THINK_CLOSE):]
+                self._in_think = False
+                continue
+            i = self._buf.find(_THINK_OPEN)
+            if i == -1:
+                # No opener in buffer. Emit everything except a possible
+                # trailing "<" that might be the start of "<think>".
+                j = self._buf.rfind("<")
+                if j != -1 and len(self._buf) - j <= self._MAX_HOLD:
+                    out.append(self._buf[:j])
+                    self._buf = self._buf[j:]
+                else:
+                    out.append(self._buf)
+                    self._buf = ""
+                break
+            out.append(self._buf[:i])
+            self._buf = self._buf[i + len(_THINK_OPEN):]
+            self._in_think = True
+        return "".join(out)
+
+    def flush(self) -> str:
+        if self._in_think:
+            return ""
+        tail = self._buf
+        self._buf = ""
+        return tail
 
 
 class OllamaClient:
@@ -65,15 +145,19 @@ class OllamaClient:
                 options=options,
                 think=False,
             )
-            content = (resp["message"]["content"] or "").strip()
+            content = _strip_think_blocks((resp["message"]["content"] or ""))
             if content:
                 return content
+            # Model routed everything to `thinking` even with think=False — return
+            # that as a last resort (also stripped in case it contains nested tags).
             thinking = getattr(resp["message"], "thinking", None) or ""
-            return thinking.strip()
+            return _strip_think_blocks(thinking)
 
         # Streaming path — yield chunks to the callback; accumulate for retries.
+        # The filter never emits tokens inside a <think> block to the UI.
         acc: list[str] = []
         thinking_acc: list[str] = []
+        filt = _ThinkFilter()
         try:
             stream = self.client.chat(
                 model=self.model,
@@ -88,22 +172,31 @@ class OllamaClient:
                     continue
                 delta = (msg.get("content") if isinstance(msg, dict) else getattr(msg, "content", None)) or ""
                 if delta:
-                    acc.append(delta)
-                    try:
-                        on_chunk(delta)
-                    except Exception as e:
-                        print(f"[ollama_client] on_chunk raised: {e!r}")
+                    safe = filt.feed(delta)
+                    if safe:
+                        acc.append(safe)
+                        try:
+                            on_chunk(safe)
+                        except Exception as e:
+                            print(f"[ollama_client] on_chunk raised: {e!r}")
                 # Some builds route early output to `thinking` even with think=False.
                 th = (msg.get("thinking") if isinstance(msg, dict) else getattr(msg, "thinking", None)) or ""
                 if th:
                     thinking_acc.append(th)
+            tail = filt.flush()
+            if tail:
+                acc.append(tail)
+                try:
+                    on_chunk(tail)
+                except Exception as e:
+                    print(f"[ollama_client] on_chunk raised: {e!r}")
         except Exception as e:
             print(f"[ollama_client] stream error: {e!r}")
 
         content = ("".join(acc)).strip()
         if content:
             return content
-        return ("".join(thinking_acc)).strip()
+        return _strip_think_blocks("".join(thinking_acc))
 
     def generate(self, prompt: str, system: str | None = None,
                  temperature: float = 0.7, top_p: float = 0.9,
