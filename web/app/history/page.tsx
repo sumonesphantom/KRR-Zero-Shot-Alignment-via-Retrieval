@@ -21,7 +21,7 @@ import {
 } from "../../components/ui/alert-dialog";
 import { EmptyState } from "../../components/common/EmptyState";
 import { historyStore, type HistoryEntry } from "../../lib/stores/historyStore";
-import { truncate } from "../../lib/utils/format";
+import { truncate } from "../../lib/format";
 
 function fmtRelative(iso: string): string {
   const d = new Date(iso);

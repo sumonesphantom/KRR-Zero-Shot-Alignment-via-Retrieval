@@ -5,7 +5,7 @@ import { EmptyState } from "../../components/common/EmptyState";
 import { Badge } from "../../components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
-import { truncate } from "../../lib/utils/format";
+import { truncate } from "../../lib/format";
 
 export const dynamic = "force-dynamic";
 

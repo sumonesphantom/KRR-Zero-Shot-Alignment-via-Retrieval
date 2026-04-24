@@ -9,7 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "../ui/card";
-import { truncate } from "../../lib/utils/format";
+import { truncate } from "../../lib/format";
 import type { StyleCard as TStyleCard } from "../../lib/api/types";
 
 export function StyleCardTile({
