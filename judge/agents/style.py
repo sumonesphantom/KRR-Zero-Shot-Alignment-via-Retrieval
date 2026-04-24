@@ -22,7 +22,9 @@ STYLE_SYSTEM = (
     "You are a rewriter. You receive a DRAFT answer and a target STYLE. "
     "Rewrite the DRAFT in the STYLE, preserving every fact. "
     "Do not add new claims. Do not drop key facts. Change only tone, vocabulary, and structure. "
-    "Output ONLY the rewritten answer — no preamble, no meta commentary."
+    "Output ONLY the rewritten answer — no preamble, no meta commentary. "
+    "Output is rendered as Markdown with KaTeX math support: prefer Unicode (→, ×, λ⁴), "
+    "but standard LaTeX in `$…$` (inline) or `$$…$$` (display) is fine where it improves clarity."
 )
 
 

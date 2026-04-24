@@ -1,9 +1,15 @@
 "use client";
 
 import ReactMarkdown from "react-markdown";
+import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 
 import { cn } from "../../lib/utils";
+
+// KaTeX styles — imported here so any consumer of MarkdownBody automatically
+// gets math rendering. Brings in fonts via CDN-replicable URLs at runtime.
+import "katex/dist/katex.min.css";
 
 /**
  * Markdown renderer for LLM-generated prose — drafts, styled outputs, final
@@ -49,7 +55,12 @@ export function MarkdownBody({
         className
       )}
     >
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{children}</ReactMarkdown>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeKatex]}
+      >
+        {children}
+      </ReactMarkdown>
     </div>
   );
 }
