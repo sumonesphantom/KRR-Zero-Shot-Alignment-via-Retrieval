@@ -32,7 +32,11 @@ services:
       dockerfile: docker/api.Dockerfile
     restart: unless-stopped
     networks:
+      # krr-internal for web→api SSR rewrites (non-SSE calls); dokploy-network
+      # so Traefik can route /api/* directly to api and bypass Next.js
+      # response buffering on SSE streams.
       - krr-internal
+      - dokploy-network
     depends_on:
       ollama:
         condition: service_healthy
