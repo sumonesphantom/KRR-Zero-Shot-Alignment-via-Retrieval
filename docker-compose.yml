@@ -58,8 +58,11 @@ services:
       dockerfile: docker/web.Dockerfile
       args:
         # Empty → browser uses same-origin paths (/api/...). Next.js server
-        # then rewrites those to the api service via API_UPSTREAM below.
+        # then rewrites those to the api service via API_UPSTREAM.
         NEXT_PUBLIC_API_BASE: ""
+        # Baked into the Next.js rewrite manifest at build time — changing
+        # this at runtime has no effect.
+        API_UPSTREAM: http://api:8000
     restart: unless-stopped
     depends_on:
       api:

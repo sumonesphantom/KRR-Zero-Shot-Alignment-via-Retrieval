@@ -19,6 +19,12 @@ COPY web/ ./
 ARG NEXT_PUBLIC_API_BASE=""
 ENV NEXT_PUBLIC_API_BASE=${NEXT_PUBLIC_API_BASE}
 
+# Next.js rewrites() is evaluated at build time — the destination string is
+# baked into the rewrite manifest. API_UPSTREAM must be set HERE (not just at
+# runtime) or the container will proxy to localhost:8000 and fail.
+ARG API_UPSTREAM=http://api:8000
+ENV API_UPSTREAM=${API_UPSTREAM}
+
 RUN pnpm build
 
 # --- runtime stage (Next standalone output) ---
