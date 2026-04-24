@@ -17,6 +17,8 @@ services:
     restart: unless-stopped
     volumes:
       - ollama-models:/root/.ollama
+    networks:
+      - krr-internal
     healthcheck:
       test: ["CMD", "ollama", "list"]
       interval: 15s
@@ -29,6 +31,8 @@ services:
       context: .
       dockerfile: docker/api.Dockerfile
     restart: unless-stopped
+    networks:
+      - krr-internal
     depends_on:
       ollama:
         condition: service_healthy
@@ -67,11 +71,24 @@ services:
     depends_on:
       api:
         condition: service_started
+    networks:
+      - krr-internal
+      - dokploy-network
     environment:
       API_UPSTREAM: http://api:8000
       NODE_ENV: production
     expose:
       - "3000"
+
+networks:
+  # Private network for inter-service traffic. Isolates api/ollama from the
+  # shared dokploy-network where generic service names like 'api' collide
+  # with other projects' containers.
+  krr-internal:
+  # Dokploy's Traefik runs here; web must join it so the reverse proxy can
+  # route krr.msantoki.com → web:3000.
+  dokploy-network:
+    external: true
 
 volumes:
   ollama-models:
