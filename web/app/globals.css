@@ -109,3 +109,25 @@
     font-family: var(--font-sans), Arial, Helvetica, sans-serif;
   }
 }
+
+/* Shimmer effect for thinking-mode models. The gradient slides across the
+ * text while the model's <think>…</think> block is gated on the backend, so
+ * the UI indicates activity even though no tokens are visible yet. */
+@keyframes thinking-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.thinking-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--primary) 0%,
+    color-mix(in oklch, var(--primary) 40%, var(--foreground)) 50%,
+    var(--primary) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: thinking-shimmer 1.8s linear infinite;
+}

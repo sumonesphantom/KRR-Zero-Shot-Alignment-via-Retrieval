@@ -92,6 +92,7 @@ export function JudgePlayground() {
                   hasDraft &&
                   trace.revisions.length === 0
                 }
+                thinking={judge.status === "streaming" && judge.draftThinking}
               />
             )}
           </>
@@ -111,6 +112,7 @@ export function JudgePlayground() {
               revisions={trace.revisions}
               mode={judge.status === "done" ? "static" : "live"}
               activeAttempt={judge.activeAttempt}
+              styleThinking={judge.styleThinking}
               emptyPlaceholder={
                 judge.status === "streaming" ? (
                   <EmptyState

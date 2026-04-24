@@ -8,6 +8,7 @@ export function RevisionsList({
   revisions,
   mode,
   activeAttempt,
+  styleThinking,
   emptyPlaceholder,
 }: {
   revisions: RevisionStep[];
@@ -17,6 +18,7 @@ export function RevisionsList({
     attemptForStyle: number;
     styleId: string;
   } | null;
+  styleThinking?: Record<number, boolean>;
   emptyPlaceholder?: React.ReactNode;
 }) {
   if (revisions.length === 0) {
@@ -39,6 +41,7 @@ export function RevisionsList({
           mode === "live" &&
           step.verdict.styleScore === 0 &&
           !step.verdict.rationale;
+        const thinking = !!styleThinking?.[step.attempt];
         return (
           <RevisionCard
             key={step.attempt}
@@ -46,6 +49,7 @@ export function RevisionsList({
             awaitingVerdict={awaitingVerdict}
             awaitingStyled={awaitingStyled}
             streaming={isActive && step.styled.length > 0}
+            thinking={thinking}
           />
         );
       })}

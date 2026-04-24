@@ -88,6 +88,7 @@ class Orchestrator:
         draft = self.knowledge.draft(
             query,
             on_chunk=(lambda delta: _emit("draft_delta", delta=delta)) if on_event else None,
+            on_thinking=(lambda t: _emit("draft_thinking", thinking=t)) if on_event else None,
         )
         trace.draft = draft
         _emit("draft", draft=draft)
@@ -115,6 +116,10 @@ class Orchestrator:
                 on_chunk=(
                     lambda delta, a=_attempt_captured, sid=_style_id_captured:
                         _emit("style_delta", attempt=a, styleId=sid, delta=delta)
+                ) if on_event else None,
+                on_thinking=(
+                    lambda t, a=_attempt_captured, sid=_style_id_captured:
+                        _emit("style_thinking", attempt=a, styleId=sid, thinking=t)
                 ) if on_event else None,
             )
             _emit(

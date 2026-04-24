@@ -1,6 +1,7 @@
 import { Badge } from "../ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { CopyButton } from "../common/CopyButton";
+import { MarkdownBody } from "../common/MarkdownBody";
 import { ActionBadge } from "./ActionBadge";
 import {
   CosineBadge,
@@ -34,7 +35,7 @@ export function FinalOutputPanel({
         </div>
       </CardHeader>
       <CardContent>
-        <p className="whitespace-pre-wrap text-sm leading-6">{output}</p>
+        <MarkdownBody>{output}</MarkdownBody>
       </CardContent>
     </Card>
   );

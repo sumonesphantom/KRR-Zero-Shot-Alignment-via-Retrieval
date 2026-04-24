@@ -69,13 +69,28 @@ class _ThinkFilter:
     Maintains a small tail buffer so a `<think>` / `</think>` tag split across
     chunk boundaries (e.g. "<thi" + "nk>") never leaks through. Unterminated
     blocks at end-of-stream are dropped in `flush()`.
+
+    Optional `on_state` fires `True` when entering a think block and `False`
+    when leaving — used by the orchestrator to show a thinking shimmer in the
+    UI while the model's real output is gated.
     """
 
     _MAX_HOLD = max(len(_THINK_OPEN), len(_THINK_CLOSE)) - 1
 
-    def __init__(self) -> None:
+    def __init__(self, on_state: Optional[Callable[[bool], None]] = None) -> None:
         self._in_think = False
         self._buf = ""
+        self._on_state = on_state
+        self._last_reported = False
+
+    def _notify(self, in_think: bool) -> None:
+        if in_think == self._last_reported or self._on_state is None:
+            return
+        self._last_reported = in_think
+        try:
+            self._on_state(in_think)
+        except Exception as e:
+            print(f"[ollama_client] on_state raised: {e!r}")
 
     def feed(self, chunk: str) -> str:
         if not chunk:
@@ -93,6 +108,7 @@ class _ThinkFilter:
                     break
                 self._buf = self._buf[i + len(_THINK_CLOSE):]
                 self._in_think = False
+                self._notify(False)
                 continue
             i = self._buf.find(_THINK_OPEN)
             if i == -1:
@@ -109,10 +125,16 @@ class _ThinkFilter:
             out.append(self._buf[:i])
             self._buf = self._buf[i + len(_THINK_OPEN):]
             self._in_think = True
+            self._notify(True)
         return "".join(out)
 
     def flush(self) -> str:
         if self._in_think:
+            # End-of-stream inside an unterminated block — close it out so the
+            # UI can exit the shimmer state even if tokens were unterminated.
+            self._notify(False)
+            self._buf = ""
+            self._in_think = False
             return ""
         tail = self._buf
         self._buf = ""
@@ -126,7 +148,8 @@ class OllamaClient:
 
     def _chat(self, user_content: str, temperature: float, top_p: float,
               max_new_tokens: int, stop: list[str] | None,
-              on_chunk: Optional[Callable[[str], None]] = None) -> str:
+              on_chunk: Optional[Callable[[str], None]] = None,
+              on_thinking: Optional[Callable[[bool], None]] = None) -> str:
         options = {
             "temperature": max(temperature, MIN_TEMPERATURE),
             "top_p": top_p,
@@ -154,10 +177,11 @@ class OllamaClient:
             return _strip_think_blocks(thinking)
 
         # Streaming path — yield chunks to the callback; accumulate for retries.
-        # The filter never emits tokens inside a <think> block to the UI.
+        # The filter never emits tokens inside a <think> block to the UI, but
+        # notifies `on_thinking` so the UI can show a shimmer while gated.
         acc: list[str] = []
         thinking_acc: list[str] = []
-        filt = _ThinkFilter()
+        filt = _ThinkFilter(on_state=on_thinking)
         try:
             stream = self.client.chat(
                 model=self.model,
@@ -202,13 +226,15 @@ class OllamaClient:
                  temperature: float = 0.7, top_p: float = 0.9,
                  max_new_tokens: int = MAX_NEW_TOKENS,
                  stop: list[str] | None = None,
-                 on_chunk: Optional[Callable[[str], None]] = None) -> str:
+                 on_chunk: Optional[Callable[[str], None]] = None,
+                 on_thinking: Optional[Callable[[bool], None]] = None) -> str:
         """Generate a completion. If `on_chunk` is provided, streams tokens
         through the callback as they arrive; returns the full text either way.
         """
         user_content = f"{system}\n\n{prompt}" if system else prompt
 
-        out = self._chat(user_content, temperature, top_p, max_new_tokens, stop, on_chunk)
+        out = self._chat(user_content, temperature, top_p, max_new_tokens, stop,
+                         on_chunk, on_thinking)
         if out:
             return out
 
@@ -216,7 +242,8 @@ class OllamaClient:
         # is always non-streaming — if the first streamed attempt yielded
         # nothing, we don't want to re-stream an empty to the UI.
         retry_temp = max(temperature + 0.1, 0.2)
-        out = self._chat(user_content, retry_temp, top_p, max_new_tokens, stop, None)
+        out = self._chat(user_content, retry_temp, top_p, max_new_tokens, stop,
+                         None, None)
         if not out:
             print(f"[ollama_client] WARNING: empty response from model={self.model} "
                   f"after retry (prompt len={len(user_content)} chars)")

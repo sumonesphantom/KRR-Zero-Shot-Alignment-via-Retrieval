@@ -12,7 +12,9 @@ import { Badge } from "../ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Skeleton } from "../ui/skeleton";
 import { ActionBadge } from "./ActionBadge";
+import { ThinkingShimmer } from "./ThinkingShimmer";
 import { CosineBadge, StyleScoreBadge } from "./VerdictBadge";
+import { MarkdownBody } from "../common/MarkdownBody";
 import type { RevisionStep } from "../../lib/api/types";
 
 export function RevisionCard({
@@ -20,11 +22,13 @@ export function RevisionCard({
   awaitingVerdict,
   awaitingStyled,
   streaming,
+  thinking,
 }: {
   step: RevisionStep;
   awaitingVerdict: boolean;
   awaitingStyled?: boolean;
   streaming?: boolean;
+  thinking?: boolean;
 }) {
   return (
     <Card>
@@ -35,7 +39,9 @@ export function RevisionCard({
             <Badge variant="outline">{step.styleId}</Badge>
           </CardTitle>
           <div className="flex items-center gap-2 flex-wrap">
-            {streaming ? (
+            {thinking ? (
+              <ThinkingShimmer />
+            ) : streaming ? (
               <Badge variant="secondary" className="animate-pulse">streaming…</Badge>
             ) : awaitingVerdict ? (
               <Badge variant="secondary" className="animate-pulse">judging…</Badge>
@@ -60,17 +66,19 @@ export function RevisionCard({
               <Skeleton className="h-3 w-[92%]" />
               <Skeleton className="h-3 w-[75%]" />
             </div>
-          ) : (
-            <p className="whitespace-pre-wrap text-sm leading-6 rounded-md bg-muted/40 p-3">
-              {step.styled || (
-                <span className="italic text-muted-foreground">(empty)</span>
-              )}
-              {streaming && (
+          ) : step.styled ? (
+            <div className="rounded-md bg-muted/40 p-3">
+              <MarkdownBody>{step.styled}</MarkdownBody>
+              {streaming && !thinking && (
                 <span
                   className="inline-block w-[0.4em] h-[1em] ml-[1px] bg-primary align-[-0.1em] animate-pulse"
                   aria-hidden="true"
                 />
               )}
+            </div>
+          ) : (
+            <p className="text-sm italic text-muted-foreground rounded-md bg-muted/40 p-3">
+              {thinking ? "thinking…" : "(empty)"}
             </p>
           )}
         </div>

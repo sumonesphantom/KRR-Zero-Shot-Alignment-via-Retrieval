@@ -23,6 +23,11 @@ interface State {
     attemptForStyle: number;
     styleId: string;
   } | null;
+  // Thinking-mode shimmer flags. Thinking models emit <think>…</think> blocks
+  // that the backend strips before streaming real tokens; these flags tell the
+  // UI to show a shimmer while the model is in that gated phase.
+  draftThinking: boolean;
+  styleThinking: Record<number, boolean>;
   error: string | null;
   errorCode: string | null;
   request: GenerateRequest | null;
@@ -39,6 +44,8 @@ const initial: State = {
   status: "idle",
   trace: null,
   activeAttempt: null,
+  draftThinking: false,
+  styleThinking: {},
   error: null,
   errorCode: null,
   request: null,
@@ -64,6 +71,8 @@ function reducer(state: State, action: Action): State {
         status: "streaming",
         trace: emptyTrace(action.req),
         activeAttempt: null,
+        draftThinking: false,
+        styleThinking: {},
         error: null,
         errorCode: null,
         request: action.req,
@@ -71,7 +80,13 @@ function reducer(state: State, action: Action): State {
     case "reset":
       return initial;
     case "cancel":
-      return { ...state, status: "idle", activeAttempt: null };
+      return {
+        ...state,
+        status: "idle",
+        activeAttempt: null,
+        draftThinking: false,
+        styleThinking: {},
+      };
     case "error":
       return {
         ...state,
@@ -79,6 +94,8 @@ function reducer(state: State, action: Action): State {
         error: action.error.message,
         errorCode: null,
         activeAttempt: null,
+        draftThinking: false,
+        styleThinking: {},
       };
     case "event": {
       if (!state.trace) return state;
@@ -96,6 +113,8 @@ function reducer(state: State, action: Action): State {
         case "retrieval":
           t.retrieval = ev.retrieval;
           return { ...state, trace: t };
+        case "draft_thinking":
+          return { ...state, draftThinking: ev.thinking };
         case "draft_delta":
           // Append streaming token to the draft being composed.
           t.draft = (t.draft ?? "") + ev.delta;
@@ -103,7 +122,7 @@ function reducer(state: State, action: Action): State {
         case "draft":
           // Terminal event for the Knowledge step — authoritative value.
           t.draft = ev.draft;
-          return { ...state, trace: t };
+          return { ...state, trace: t, draftThinking: false };
         case "style_attempt_start":
           // Create an empty revision slot so incoming `style_delta` chunks
           // have somewhere to land without waiting for `style_attempt`.
@@ -127,6 +146,11 @@ function reducer(state: State, action: Action): State {
               attemptForStyle: ev.attemptForStyle,
               styleId: ev.styleId,
             },
+          };
+        case "style_thinking":
+          return {
+            ...state,
+            styleThinking: { ...state.styleThinking, [ev.attempt]: ev.thinking },
           };
         case "style_delta": {
           // Immutable update — never mutate the existing revision object, or
@@ -170,7 +194,14 @@ function reducer(state: State, action: Action): State {
               i === idx ? { ...r, styled: ev.styled } : r
             );
           }
-          return { ...state, trace: { ...t }, activeAttempt: null };
+          const nextStyleThinking = { ...state.styleThinking };
+          delete nextStyleThinking[ev.attempt];
+          return {
+            ...state,
+            trace: { ...t },
+            activeAttempt: null,
+            styleThinking: nextStyleThinking,
+          };
         }
         case "judge_verdict": {
           const idx = t.revisions.findIndex((r) => r.attempt === ev.attempt);
@@ -184,7 +215,14 @@ function reducer(state: State, action: Action): State {
           t.finalStyleId = ev.finalStyleId;
           t.finalOutput = ev.finalOutput;
           t.finalVerdict = ev.finalVerdict;
-          return { ...state, trace: t, status: "done", activeAttempt: null };
+          return {
+            ...state,
+            trace: t,
+            status: "done",
+            activeAttempt: null,
+            draftThinking: false,
+            styleThinking: {},
+          };
         case "error":
           return {
             ...state,
@@ -251,6 +289,8 @@ export function useGenerationStream() {
     status: state.status,
     trace: state.trace,
     activeAttempt: state.activeAttempt,
+    draftThinking: state.draftThinking,
+    styleThinking: state.styleThinking,
     error: state.error,
     errorCode: state.errorCode,
     start,
