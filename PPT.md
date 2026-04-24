@@ -1,9 +1,12 @@
 ---
 title: "Zero-Shot Alignment via Retrieval"
 subtitle: "Knowledge / Style / Judge control loop"
+course: "ASU · KRR · Spring 2026"
 total_minutes: 6
 slide_count: 6
-audience: "ML research / applied NLP"
+aspect_ratio: "16:9"
+canvas_px: "1920×1080"
+audience: "ML research / applied NLP, graded class presentation"
 team:
   - { name: "Venkat Tummala",         asu_id: "1236842219" }
   - { name: "Anish Paul Singareddy",  asu_id: "1237522730" }
@@ -12,327 +15,448 @@ team:
   - { name: "Charith Reddy Bandi",    asu_id: "1236775152" }
 ---
 
-# How to read this file
+# Deck build spec
 
-This file is **standalone**. A downstream deck-building agent should be able to produce a complete 6-slide presentation from this file alone — no access to the codebase, no access to the README. Everything the agent needs is below: project context, architecture, numerical results, slide-by-slide briefs with full speaker-note prose, and assets.
+This is a **build spec**, not an outline. A deck-builder (human or agent) should be able to produce the final slide file directly from this document — every color, font size, and word of body copy is specified below. If it isn't here, don't invent it; drop the element.
 
-**Constraints for the deck-building agent:**
-- **Exactly 6 slides** (including the title). Do not split or merge.
-- Slides map 1:1 to the four things this talk must communicate: problem, KRR approach, reasoning, insight + contribution + results — plus title and demo.
-- Use only the numbers quoted in this file. Do not fabricate. If a number isn't here, don't invent one; drop the bullet instead.
-- On-slide bullets are tight (≤ 5, ≤ 8 words each). Speaker notes are full prose paragraphs (60–90 words), meant to be read aloud at ~140 wpm.
-- Visual captions are descriptions, not commands — the deck-builder picks the render.
-- Team tiles on slide 1 use the names + ASU IDs from the front-matter.
+## Agent contract
 
-Total budget: 30 + 50 + 50 + 80 + 70 + 50 = **330 s ≈ 5:30**, which leaves ~30 s buffer in a 6-minute slot.
+1. **Produce exactly 6 slides at 1920×1080.** Not 5, not 7. Every slide number below is canonical.
+2. **Use only the copy in "On-slide content" — verbatim.** Speaker notes are separate; never print them on the slide.
+3. **Respect the visual system in §1 globally.** Do not introduce new colors, fonts, or decorative shapes.
+4. **Use only numbers that appear in §2 "Project facts".** If you can't find a number here, omit the bullet rather than inventing one.
+5. **Render all diagrams and charts with the color tokens in §1.4** — never default to the presentation tool's accent palette.
+6. **Deliver as**: a `.pptx` file, a Google-Slides-importable `.pptx`, OR a PDF. Whichever, it must be pixel-faithful to the layout specs in §3.
+
+Total speaker-note budget: 30 + 50 + 50 + 80 + 70 + 50 = **330 s ≈ 5:30**, leaving ~30 s buffer in a 6-minute graded slot. Speaker notes are written to be read aloud at ~140 wpm.
 
 ---
 
-# Project context (for the agent — not for slides directly)
+# §1 Visual system
 
-## What the project is
-Zero-shot preference alignment via retrieval. The user types a natural-language preference (e.g. "be formal and academic", "genz style", "executive summary"); the system retrieves the best-matching pre-authored style card from a FAISS index and runs a three-LLM **Knowledge / Style / Judge** control loop to produce a style-aligned response. All LLM calls go through Ollama. There is no fine-tuning, no LoRA, no PyTorch training — style is represented as **data** (JSONL style cards), retrieval is embedding + FAISS, and the pipeline never mutates model weights.
+## 1.1 Canvas
+- Aspect ratio **16:9**, canvas **1920×1080 px**.
+- Outer margin **96 px** on all sides (= safe area 1728×888).
+- Underlying 12-column grid, **48 px gutter**, column width **(1728 − 11·48)/12 = 100 px**.
+- Baseline grid: **8 px**. Every vertical offset rounds to a multiple of 8.
 
-## Why not fine-tune (problem framing)
-Per-user fine-tuning doesn't scale:
-- Every new user needs labelled data, VRAM, a training loop.
-- Updates mutate the shared base model → catastrophic forgetting and tenant drift.
-- Alignment is baked into opaque weights → no audit trail.
+## 1.2 Color tokens (hex; use exactly these)
 
-With retrieval:
-- Styles are data. A new style is one JSONL line.
-- The base is frozen. It never drifts.
-- Every output ties to a `(card_id, content_cosine, judge_verdict)` triple, persisted.
+| token | hex | usage |
+|---|---|---|
+| `--bg`        | `#0F0F10` | Slide background. Flat fill, no gradient. |
+| `--surface`   | `#17171A` | Card / panel fill on top of `--bg`. |
+| `--border`    | `#262628` | 1 px borders on cards, dividers. |
+| `--text`      | `#ECECEC` | Body text. |
+| `--muted`     | `#8A8A90` | Captions, labels, secondary text. |
+| `--primary`   | `#F5822E` | Titles, headline numbers, accent fills, chart "our" bars. |
+| `--primary-2` | `#FFC14D` | Secondary accent — use *sparingly*, only on Slide 5 for the insight pull-quote. |
+| `--good`      | `#3FB950` | "accept" / positive verdict badges. |
+| `--warn`      | `#D29922` | "revise_style" / "content_drift" badges. |
+| `--bad`       | `#F85149` | "wrong_style" badge. |
+| `--ref-bar`   | `#484850` | Chart "baseline" bar fill (neutral grey so `--primary` pops). |
 
-## Architecture (ASCII)
+**Dark-on-dark rule**: do not layer `--surface` cards on anything but `--bg`. Never white backgrounds anywhere.
+
+## 1.3 Typography
+
+- **Family**: Inter or Geist Sans (whichever the tool supports natively). Monospace: JetBrains Mono or Geist Mono — used for style ids and file paths.
+- **Scale**:
+  | role | size | weight | line-height |
+  |---|---|---|---|
+  | Slide title             | 64 px | 700 | 1.1 |
+  | Slide sub-title         | 28 px | 500 | 1.3 |
+  | Headline on content slide | 44 px | 700 | 1.15 |
+  | Body copy               | 26 px | 400 | 1.45 |
+  | Bullet                  | 24 px | 500 | 1.45 |
+  | Caption                 | 18 px | 400 | 1.35 |
+  | Micro (footer)          | 14 px | 500 | 1.2 |
+  | Display number (stats)  | 112 px | 700 | 1.0 |
+  | Code / mono             | 20 px | 500 | 1.4 |
+
+- **Color rules**: titles use `--primary`. Body uses `--text`. Captions and labels use `--muted`. Never color body text `--primary`.
+
+## 1.4 Chrome (repeats on every content slide, not on title)
+
+- **Top-left**: slide number like `02 / 06` in 14 px Micro, color `--muted`.
+- **Top-right**: project title lockup `Zero-Shot Alignment via Retrieval` in 14 px Micro, `--muted`.
+- **Bottom-left**: team names comma-separated in 14 px Micro, `--muted`. E.g. `Tummala · Singareddy · Santoki · Godse · Bandi`.
+- **Bottom-right**: `ASU · KRR · Spring 2026` in 14 px Micro, `--muted`.
+- All four chrome items sit **32 px inside** the outer margin.
+- Title slide (Slide 1) has **no chrome** — unobstructed hero.
+
+## 1.5 Iconography
+- Use outline icons only, 2 px stroke, color `--muted` unless indicated.
+- Source: Lucide (same set the web UI uses).
+
+---
+
+# §2 Project facts (the only source the agent may quote from)
+
+## 2.1 Problem statement
+Personalising an LLM per user via fine-tuning doesn't scale. Each new user needs labelled data, GPU time, and a training loop. Updates mutate the shared base model, risking catastrophic forgetting and tenant drift. And the alignment lives in opaque weights — no audit trail.
+
+**The reframe**: author each "style" once as a small symbolic module, index the bank once, and compose at inference. No gradients leave the lab, no weights drift in production, and adding a new style is one JSONL line.
+
+## 2.2 Architecture (one-glance)
 
 ```
 preference ─► MiniLM ─► FAISS ─► top-K style cards
 query      ─► Knowledge LLM ─► neutral draft
 draft + card ─► Style LLM ─► styled rewrite
 draft, styled, card ─► Judge LLM ─► { accept | revise_style | content_drift | wrong_style }
-                  └─► local cosine(draft, styled)   (catches hallucination the judge misses)
+                  └─► local cosine(draft, styled)   (catches hallucination the Judge misses)
 ```
 
-The loop is capped at `MAX_REVISIONS`. The best-seen candidate is always emitted. Every step is persisted to `results/traces/trace_NN.json`.
+## 2.3 The style bank — 8 cards today
 
-## Role → model mapping
+All live in `style_bank/style_cards.jsonl`. Each card = `{ id, tags, instruction, 2 exemplars }`.
+
+| id | one-line flavour |
+|---|---|
+| `formal_academic`        | Latinate vocab · subordinate clauses · hedged claims |
+| `business_executive`     | Bottom-line-first · 3–5 KPIs · business idiom |
+| `technical_precise`      | Precise terminology · numbers · complexity classes |
+| `storytelling_narrative` | Scene + character + tension · concrete sensory detail |
+| `eli5_playful`           | Only common words · toys / animals / food analogies |
+| `hype_bro`               | Hype-bro slang — "bro" · "no cap" · "W move" · "fire" |
+| `gen_z_online`           | Lowercase · chronically-online slang — "bestie" · "it's giving" |
+| `keywords_only`          | Maximum density · noun-phrase driven · drop articles |
+
+## 2.4 Role → model
 
 | Role | Default model | Purpose |
 |---|---|---|
-| Knowledge | `gemma4:latest` | Neutral factual draft (no style pressure) |
-| Style | `gemma4:latest` + retrieved style card in prompt | Rewrites the draft in the target style |
-| Judge | `rnj-1:latest` (different family from Knowledge/Style) | JSON verdict + local content cosine; routes the control loop |
+| Knowledge | `gemma4:latest` | Neutral factual draft — no style pressure |
+| Style     | `gemma4:latest` + retrieved card in prompt | Rewrites draft in the target style |
+| Judge     | `rnj-1:latest` (**different family** from Knowledge/Style) | JSON verdict + local content cosine; routes the control loop |
 
-All three call Ollama. The only other local compute is `sentence-transformers/all-MiniLM-L6-v2` for FAISS retrieval and the judge's content-preservation cosine.
+Only Ollama for inference. Only local compute: `sentence-transformers/all-MiniLM-L6-v2` for FAISS retrieval and the Judge's content cosine.
 
-## The Knowledge/Style/Judge loop (mechanics)
+## 2.5 The control loop (algorithm)
 
-`Orchestrator.run(query, preference, top_k, on_event=None) -> PipelineTrace`:
+`Orchestrator.run(query, preference, top_k) -> PipelineTrace`:
 
-1. **Retrieve.** `StyleRetriever.retrieve(preference, top_k)` — FAISS top-K over MiniLM-embedded style cards.
-2. **Draft.** `KnowledgeLLM.draft(query)` — neutral factual answer, no style.
-3. **Loop over retrieved cards:**
-   - `StyleLLM.restyle(draft, card, preference, attempt)` — rewrites draft using the card (instruction + 2 exemplars inline in the prompt).
-   - `JudgeLLM.evaluate(query, draft, styled, card)` — returns a `JudgeVerdict` with `action ∈ {accept, revise_style, content_drift, wrong_style}`. The content-preservation cosine is computed **locally** via sentence-transformers — independent of the judge's LLM call.
+1. **Retrieve.** FAISS top-K over MiniLM-embedded style cards.
+2. **Draft.** Knowledge LLM drafts from the query alone.
+3. **Loop over cards, attempts:**
+   - Style LLM rewrites draft using the card (instruction + 2 exemplars inline).
+   - Judge LLM returns `{ style_score (1–5), content_faithful (bool), action }`. Content cosine is computed **locally** — independent of Judge's LLM call.
 4. **Action routing:**
-   - `accept` → break, return best candidate.
-   - `revise_style` or `content_drift` → same card, `attempt_for_style++`, stronger hint + lower temperature.
-   - `wrong_style` → advance `style_idx`, reset attempt counter.
-5. **Cap:** `MAX_REVISIONS = 2`. Best-so-far `RevisionStep` (scored by `(content_faithful, style_score, content_cosine)`) is always emitted.
+   - `accept` → break, emit best.
+   - `revise_style` / `content_drift` → same card, `attempt_for_style++`, stronger hint + lower temperature.
+   - `wrong_style` → advance to next retrieved card, reset attempt.
+5. **Cap:** `MAX_REVISIONS = 2`. Best-so-far `RevisionStep` is always emitted.
 
-## Config defaults (overridable via `.env`)
-- `MAX_REVISIONS = 2` — hard cost ceiling on the revision loop.
-- `TOP_K = 5` — retrieval fan-out. (UI uses 3.)
-- `JUDGE_STYLE_PASS_THRESHOLD = 4` — judge's 1–5 rubric; must score ≥ 4 to `accept`.
-- `CONTENT_PRESERVATION_MIN = 0.70` — cosine(draft, styled) must clear this or the action becomes `content_drift`.
-- `MAX_NEW_TOKENS = 256` (defaults; production raises to 768).
-- `EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"`.
+## 2.6 Config defaults (all overridable via `.env`)
+- `MAX_REVISIONS = 2`
+- `JUDGE_STYLE_PASS_THRESHOLD = 5` — only an unambiguous 5/5 accepts on attempt 0
+- `CONTENT_PRESERVATION_MIN = 0.70` — cosine(draft, styled) must clear this
+- `TOP_K = 5` (UI default 3)
+- `MAX_NEW_TOKENS = 768` (prod)
 
-## The style bank (8 cards)
-All in `style_bank/style_cards.jsonl`. Each card = `{ id, tags, instruction, 2 exemplars }`.
+## 2.7 Evaluation (last recorded run)
 
-| id | flavour |
-|---|---|
-| `formal_academic`          | Latinate vocab, subordinate clauses, hedged claims |
-| `business_executive`       | Bottom-line-first, 3–5 KPIs, business idiom |
-| `technical_precise`        | Precise terminology, numbers, units, complexity classes |
-| `storytelling_narrative`   | Scene + character + tension; concrete sensory detail |
-| `eli5_playful`             | Only common words; toys / animals / food analogies |
-| `hype_bro`                 | Hype-bro slang ("bro", "no cap", "W move", "fire") |
-| `gen_z_online`             | Lowercase, chronically-online Gen Z slang ("bestie", "it's giving") |
-| `keywords_only`            | Maximum density, noun-phrase driven, drop articles |
+- **Pairwise wins:** 3-LLM + retrieval **13 / 20** vs same Ollama model direct **7 / 20** ≈ **1.85×**.
+- **Content cosine:** mean **0.80**, every item ≥ 0.70 gate.
+- **Judge style score (1–5):** mean **4.9 / 5** (on the old run; see caveats).
+- **Mean revisions:** **0.05**.
+- **Biggest movers** (baseline pairwise win rate → 3-LLM win rate):
+  `casual_friendly` 0.15 → 1.00 · `debate_critical` 0.15 → 1.00 · `socratic_teaching` 0.17 → 0.75
+  (These are from an earlier bank; wording of the slide is kept generic unless re-measured on the current 8-card set.)
 
-Example raw card:
-```json
-{
-  "id": "formal_academic",
-  "tags": ["formal", "academic", "scholarly"],
-  "instruction": "Use formal academic register. Prefer Latinate vocabulary, subordinate clauses, and hedged claims ('it may be argued that…').",
-  "examples": [
-    { "prompt": "Explain gradient descent.",
-      "answer": "Gradient descent is a first-order iterative optimisation procedure…" }
-  ]
-}
-```
+## 2.8 Honest caveats (cite on Slide 5)
 
-Add a new style: append one JSONL line, rerun `python scripts/build_index.py`. No retraining.
+1. **Self-preference bias** — the recorded run had Knowledge, Style *and* Judge on the same model, so the judge rubber-stamped at 4.9/5 and the revision loop barely fired. Production now routes Judge to `rnj-1` — a different model family (Zheng 2023) — and tightens the accept threshold to 5/5.
+2. **Retrieval ceiling** — 5 of 20 items retrieve the wrong style (top-1 ≈ 75%). Judged against a style the pipeline never tried; the first lever to fix.
 
-## Evaluation (last recorded run)
+## 2.9 Web UI (for Slide 6 screenshot)
+- Three-column Playground at `/`: (1) preference + query form, (2) retrieval hits + live Knowledge draft, (3) per-attempt Style + Judge verdicts + final.
+- Server-Sent Events stream retrieval, draft tokens, style tokens, verdicts, final.
+- `/styles` — 8-card bank browser · `/history` — localStorage replay · `/traces` — persisted eval runs.
+- Deployed: Docker Compose · Traefik on Dokploy · `krr.msantoki.com`.
 
-On a 20-prompt eval against the same Ollama model without retrieval:
-- **Pairwise wins:** 3-LLM + retrieval **13 / 20** vs Ollama direct **7 / 20** (≈ **1.85×** lift).
-- **Judge style score (1–5):** mean **4.9 / 5**.
-- **Content cosine:** mean **0.80**; every item clears the **0.70** drift gate.
-- **Mean revisions:** **0.05** — the loop rarely fired in this run (caveat below).
-- **Biggest movers** (baseline pairwise win → 3-LLM pairwise win):
-  - `casual_friendly`: 0.15 → 1.00
-  - `debate_critical`: 0.15 → 1.00
-  - `socratic_teaching`: 0.17 → 0.75
-  (Note: these style ids come from an earlier bank; the current bank is the 8-card set above. Keep the wording "biggest movers" generic unless you have a fresh eval.)
-
-### Honest caveats (cite these out loud)
-
-1. **Self-preference bias in the recorded run.** That run had Knowledge, Style *and* Judge on the same model (`gemma4`), so the judge rubber-stamped at 4.9 / 5 and the revision loop barely fired. The production `.env` now routes Judge to `rnj-1:latest` — a different model family — following Zheng et al. 2023 to break self-preference. A fresh eval under cross-family judging is pending.
-2. **Retrieval ceiling.** 5 of 20 items retrieve the wrong style (top-1 ≈ 75%). When retrieval misses, the pipeline is scored against a style it never tried to produce. First lever to fix: bigger bank, harder exemplars, or judge-in-the-loop rerank over top-K.
-
-## Streaming + UI (for the demo slide)
-
-The orchestrator's `on_event` callback emits events at each step boundary. The FastAPI endpoint `POST /api/generate/judge` fans these out as Server-Sent Events to the web UI. Event types in order: `retrieval` · `draft_delta` · `draft` · `style_attempt_start` · `style_delta` · `style_attempt` · `judge_verdict` · `final`.
-
-Web app (Next.js 16 + Tailwind + shadcn):
-- **Playground `/`** — three-column layout: (1) query + preference form, (2) retrieval hits + live Knowledge draft, (3) per-attempt style + judge verdicts + final output. Live SSE token streaming.
-- **Styles `/styles`** — the 8-card bank, with a detail drawer showing instruction + exemplars.
-- **History `/history`** — localStorage-backed replay of the user's past runs.
-- **Traces `/traces`** — browses persisted `results/traces/*.json` eval runs.
-
-## Deployment
-
-Docker Compose: `ollama` + `api` + `web`. Runs behind Traefik on Dokploy:
-- Inter-service traffic on a private `krr-internal` network (isolates service DNS from the shared `dokploy-network`).
-- `web` also joins `dokploy-network` so Traefik can route the public domain → `web:3000`.
-- `api` also joins `dokploy-network` so a second Traefik rule routes `krr.msantoki.com/api/*` directly to `api:8000`, bypassing Next.js response buffering on SSE streams.
-
-## Key design decisions (for the reasoning slide)
-
-- **Why retrieval over per-user fine-tuning?** Fine-tuning doesn't scale (labels, VRAM, iteration), mutates the shared base, and bakes alignment into weights you can't audit. Retrieval turns alignment into a discrete, inspectable decision: one card, one cosine, one verdict.
-- **Why three LLMs, not one prompt?** A single LLM doing content + style + quality gating conflates them — it hallucinates facts to appear more stylistic. Decoupling draft from restyle gives Style a clean input. An independent Judge scores the pair without self-preference.
-- **Why compute content cosine outside the judge?** The judge's LLM can miss subtle hallucinations. A sentence-embedding cosine between draft and styled is independent of the judge's weights — two signals instead of one.
-- **Why cap revisions?** Adversarial input can loop forever. `MAX_REVISIONS` gives a hard ceiling; we always emit the best-seen candidate.
-
-## Stack (for slide context)
-- **Backend:** Python 3.11, FastAPI, Uvicorn, `sse-starlette`, pydantic-settings.
-- **Retrieval:** FAISS `IndexFlatIP` over normalised MiniLM embeddings.
-- **Models:** Ollama (local / containerised), `gemma4:latest` for Knowledge + Style, `rnj-1:latest` for Judge.
-- **Frontend:** Next.js 16 (App Router, Turbopack), Tailwind v4, shadcn/ui primitives, Zustand, SSE reader over `fetch` + `ReadableStream`.
-- **Deploy:** Docker Compose + Traefik via Dokploy.
-
-## Reference
-- *Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena*, Zheng et al., 2023 — the self-preference bias the cross-family Judge is designed around.
-- Sentence-Transformers · https://www.sbert.net/ — the `all-MiniLM-L6-v2` embedder.
-- FAISS · https://github.com/facebookresearch/faiss — the retrieval index.
-- Ollama · https://ollama.com — the LLM runtime.
+## 2.10 Reference
+- *Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena*, **Zheng et al., 2023** — the self-preference bias we designed around.
+- Sentence-Transformers · FAISS · Ollama.
 
 ---
 
-# Slide 1 — Title (≈30 s)
+# §3 Slide-by-slide build spec
 
-**Key message:** Zero-shot alignment via retrieval, by a 5-person ASU team.
-
-**On-slide:**
-- Zero-shot alignment *via* retrieval
-- Eight style cards · one FAISS index · Ollama
-- Team of five (ASU)
-
-**Speaker notes (read aloud, ~70 words):** Zero-shot alignment via retrieval. From the user's view, they type a preference in plain English and get a style-matched answer immediately — no fine-tuning, no training, no wait. We make that work by stocking the shelf ahead of time: eight style cards authored as JSONL, one shared FAISS index, and Ollama for every LLM call. In six minutes: why per-user fine-tuning is the wrong frame, the three-LLM retrieval loop, why it works, and the results.
-
-**Visual:** Presentation title at top · subtitle "Knowledge / Style / Judge control loop" · five team member tiles (one per person) showing `name` and `ASU ID` from the front-matter.
+Every slide entry has five parts:
+- **Layout** — concrete geometry in the 12-col / 1920×1080 grid.
+- **On-slide content** — verbatim text the agent puts on the slide. No paraphrasing.
+- **Visuals** — chart / diagram / image specs with exact colors and data.
+- **Speaker notes** — read-aloud prose (timed).
+- **Timing** — target seconds.
 
 ---
 
-# Slide 2 — Problem (≈50 s)
+## Slide 1 — Title **(30 s)**
 
-**Key message:** Per-user fine-tuning doesn't scale; alignment should be retrieval, not training.
+**Layout.** No chrome. Content stack centered vertically, left-aligned within a 12-col full-bleed block (outer margin preserved). No background imagery.
 
-**On-slide:**
-- N users → N trained models (doesn't scale)
-- N users → one frozen base + shared bank (scales)
-- Cost constant in users · new style = one JSONL line
+**On-slide content** (top to bottom, all `--text` unless specified):
 
-**Speaker notes (~80 words):** Personalising a model per user via fine-tuning doesn't scale. Each new user needs labelled data, VRAM, a training loop — and worse, updates mutate the shared base, so every tenant risks overwriting what worked for the last. Worse still, the alignment is baked into opaque weights you can't audit. The reframe: style is a retrieval problem, not a training problem. Author the style once as a card, index the bank once, compose at inference. No gradients leave the lab, the base never drifts, and adding a new style is one JSONL line.
+- Overline (16 px Micro, `--muted`, uppercase, letter-spacing 0.08em):
+  `ASU · KRR · SPRING 2026`
+- Title (112 px, weight 700, color `--primary`, lh 1.05):
+  `Zero-Shot Alignment`
+  `via Retrieval`
+- Subtitle (28 px, 500, `--text`):
+  `Knowledge · Style · Judge — a bounded control loop`
+- 24 px vertical spacer.
+- **Team row** — five tiles in a single horizontal flex, gap 24 px, no borders. Each tile:
+  - Line 1 (20 px, 600, `--text`): member name
+  - Line 2 (14 px, 500, `--muted`, mono): ASU ID
+  - (Order exactly as in front-matter: Tummala · Singareddy · Santoki · Godse · Bandi.)
+- Footer micro, bottom-left at 32 px inside safe area (18 px, `--muted`):
+  `github.com/Manan-Santoki/zero-shot-alignment-retrieval`
+- Footer micro, bottom-right symmetric (18 px, `--muted`):
+  `krr.msantoki.com`
 
-**Visual:** Two-panel diagram, left and right.
-- Left panel ("fine-tune per user") — one base model with N trainer arrows pointing in, each labelled "user 1 data", "user 2 data"…, and a caption "costs grow with users · weights drift".
-- Right panel ("retrieve per user") — one frozen base model + a shelf of style cards + a retriever arrow from a preference-bubble. Caption: "bank once · infer N times · cost constant".
+**Visuals.** None. Negative space is the design.
 
----
-
-# Slide 3 — KRR approach (≈50 s)
-
-**Key message:** Styles are symbolic modules in a bank; alignment = retrieve + compose.
-
-**On-slide:**
-- Each style = `{ id, tags, instruction, 2 exemplars }`
-- MiniLM → FAISS `IndexFlatIP` (cosine on unit vectors)
-- Retrieval is the *only* personalisation signal
-- Eight styles today · scales by one line
-
-**Speaker notes (~80 words):** The KRR framing. Each style is a small symbolic knowledge module — an id, tags, a natural-language instruction, and two exemplars. The library of modules is the bank; the user's preference is a query over that bank. Every card is encoded with all-MiniLM-L6-v2 and stored in a FAISS IndexFlatIP — cosine similarity as inner product on unit-normalised embeddings. At query time we retrieve top-K and compose. Because style lives in data, not weights, the knowledge base is inspectable, editable, and extensible — the three properties you want from a symbolic representation, and none fine-tuning gives you.
-
-**Visual:** Left side: a grid of 8 style-card tiles (one per id from the bank), each showing the id and a one-line flavour. Right side: an arrow-flow `preference → MiniLM embed → FAISS top-K → selected card`. Bottom-right: a small JSON excerpt of one card (use the `formal_academic` example above).
+**Speaker notes** (~70 words, ~30 s): Zero-shot alignment via retrieval. From the user's view, they type a preference in plain English and get a style-matched answer immediately — no fine-tuning, no training, no wait. We make that work by stocking the shelf ahead of time: eight style cards authored as JSONL, one shared FAISS index, and Ollama for every LLM call. In six minutes: why per-user fine-tuning is the wrong frame, our three-LLM retrieval loop, why it works, and what moved on the eval.
 
 ---
 
-# Slide 4 — Reasoning: the Knowledge/Style/Judge loop (≈80 s)
+## Slide 2 — Problem **(50 s)**
 
-**Key message:** Three role-specialised LLMs + four judge actions turn alignment into a bounded, auditable control loop.
+**Layout.** Two equal columns (col 1–6 / col 7–12). Left = text block; right = diagram. Headline spans both columns, top.
 
-**On-slide:**
-- Knowledge drafts facts · Style rewrites · Judge evaluates
-- 4 judge actions: `accept` · `revise_style` · `content_drift` · `wrong_style`
-- Judge runs a *different* model family (breaks self-preference bias)
-- Content cosine computed locally — independent of the judge's LLM
-- `MAX_REVISIONS = 2` · always emit best-so-far
+**On-slide content**:
 
-**Speaker notes (~120 words):** Why three LLMs and not one prompt. Knowledge drafts neutral facts — no style pressure. Style rewrites that draft using the retrieved card — no factual pressure. Judge evaluates the pair along two axes: is the style right on a 1-to-5 rubric, and is the content faithful — measured by a local sentence-transformers cosine, not the judge's own LLM call. The judge emits one of four actions. Accept exits. Revise_style re-tries the same card with a stronger hint and lower temperature. Content_drift does the same because the draft is still the source of truth. Wrong_style advances to the next retrieved card. Two design choices kill specific failure modes: running the judge on a different model family than Knowledge and Style prevents self-preference bias documented in Zheng et al. 2023, and computing the content cosine outside the judge's LLM catches hallucinations the judge missed. Revisions are capped at two; the best candidate is always emitted.
+- Chrome: `02 / 06` · `Zero-Shot Alignment via Retrieval` · team row · `ASU · KRR · Spring 2026`.
+- Headline (44 px, 700, `--primary`), col 1–12, top aligned:
+  `Per-user fine-tuning doesn't scale`
+- Sub-headline (26 px, 400, `--muted`), col 1–12, 16 px below:
+  `Treat style as retrieval, not training.`
 
-**Visual:** Horizontal KSJ flow diagram.
-- Nodes left-to-right: `Preference` → `FAISS top-K` → `Knowledge LLM (draft)` → `Style LLM (rewrite)` → `Judge LLM (verdict)` → `Final`.
-- Under Judge, four coloured return-arrows labelled with the four actions, looping back appropriately (`accept` → Final; `revise_style`, `content_drift` → Style LLM; `wrong_style` → back to retrieval, next card).
-- Under the top edge: a small dashed side-arrow from `Style` through `cosine(draft, styled)` feeding into the Judge box — labelled "local, not LLM".
-- Bottom caption strip: "`MAX_REVISIONS = 2` · best-so-far always emitted".
+**Left column (col 1–6), starts 80 px below sub-headline:**
 
----
+- Bullets, 24 px / 500 / `--text`, 32 px line gap. Render each bullet with a 6 px square `--primary` glyph at the start instead of a disc:
+  - `N users → N trained models` — growing VRAM, labels, iteration.
+  - `Updates mutate the shared base` — catastrophic forgetting, tenant drift.
+  - `Alignment lives in weights` — no audit trail.
+- 48 px vertical spacer.
+- **Boxed statement** — `--surface` fill, 1 px `--border`, 24 px padding, 12 px radius:
+  > 24 px, 500, `--text`: "Author each style once. Retrieve and compose at inference."
+  > 18 px, `--muted`, 8 px below: `new style = one JSONL line · base stays frozen`
 
-# Slide 5 — Insight + contribution + results (≈70 s)
+**Right column (col 7–12). Diagram, top aligned with the left bullets.**
 
-**Key message:** Every output is an auditable triple — card, cosine, verdict — and it moved the numbers.
+Two stacked panels, each `--surface` filled, 1 px `--border`, 16 px radius, 24 px padding:
 
-**On-slide:**
-- **Insight:** retrieval makes alignment a discrete, auditable decision
-- **Contribution:** every response = `(card_id, content_cosine, judge_verdict)` triple
-- 3-LLM + retrieval **13 / 20** vs Ollama direct **7 / 20** (≈ **1.85×**)
-- Content cosine mean **0.80** · every item clears the **0.70** drift gate
-- Judge score mean **4.9 / 5** · mean revisions **0.05**
+- Panel A header (20 px, 600, `--muted`): `Fine-tune per user`
+  - Body: central `Base model` pill (`--surface`, 1 px `--bad` border, 18 px mono id). Four arrows (`--bad`, 2 px stroke) labelled `user 1`, `user 2`, `user 3`, `user N` pointing INTO the pill. Small `×` marks at each arrow tip.
+  - Caption (18 px, `--muted`, below): `cost grows with users · weights drift`
+- 16 px gap between panels.
+- Panel B header (20 px, 600, `--muted`): `Retrieve per user`
+  - Body: `Base model` pill (same style but 1 px `--good` border). To its left, a 2×4 grid of small `--surface` tiles representing style cards (`style card` label in 14 px). An arrow labelled `preference →` goes from a speech-bubble icon through the card grid (one card highlighted `--primary`) into the Base pill.
+  - Caption (18 px, `--muted`): `bank once · infer N times · cost constant`
 
-**Speaker notes (~110 words):** The main insight and our contribution. Retrieval turns alignment into an auditable discrete decision: every response traces back to a specific card, a specific content cosine, and a specific judge verdict. That triple is the contribution — a stakeholder can see exactly why an output looks the way it does, and exactly where to intervene when it's wrong. Contrast that with RLHF, where bias flows through opaque weight updates. On a 20-prompt eval against the same Ollama model without retrieval, the pipeline wins 13 of 20 — roughly a 1.85× lift. Content cosine averages 0.80, every item clears the 0.70 drift gate. Two honest caveats: that run used the same model family for all three roles, so the judge rated generously and the revision loop barely fired; production now routes the Judge to `rnj-1` to exercise the loop. And retrieval still misses 5 of 20 — that caps the ceiling and is the first thing to fix.
-
-**Visual:** Left: grouped bar chart "3-LLM + retrieval vs Ollama direct", values 13 and 7 out of 20, y-axis "pairwise wins (n=20)". Right: three stat cards — "cosine 0.80" (with a small dashed line at 0.70 labelled "drift gate"), "judge 4.9 / 5", "revisions 0.05". Below the chart, a thin caption strip: "source: `results/evaluation_results_3llm.json` · pre-`rnj-1` Judge; cross-family re-run pending".
-
----
-
-# Slide 6 — Demo + next (≈50 s)
-
-**Key message:** Live SSE trace in the web UI; three concrete unlocks.
-
-**On-slide:**
-- Three-column Playground — query · retrieval + draft · attempts + verdicts
-- Live SSE token streaming · per-attempt judge scores · `/history` replay
-- Shipped: Docker Compose · deployed on Dokploy (Traefik)
-- **Next:** (1) grow the bank beyond 8 styles, (2) judge-in-loop rerank on top-K to fix the 5/20 misses, (3) content preservation beyond cosine (NLI / fact-level)
-
-**Speaker notes (~100 words):** The web UI streams every step of the loop over Server-Sent Events — retrieval hits, draft tokens, each style attempt's tokens, each judge verdict, and the final output. Same trace format we persist offline, so one renderer works for both live streams and the history view. The full stack ships as Docker Compose and runs behind Traefik on a Dokploy deployment; the public UI is same-origin, SSE bypasses Next.js directly to the API so streams don't buffer. Three queued unlocks, each a one-config-knob change thanks to the retrieval frame: grow the style bank — one JSONL line per style, no retraining; fix the five retrieval misses with a larger bank or a judge-in-the-loop rerank over top-K; and extend content preservation beyond cosine with NLI or fact-level checks.
-
-**Visual:** Large screenshot placeholder of the three-column Playground mid-stream (columns: form · retrieval + draft · attempts + verdicts; a `Running…` button and a progress bar visible). To the right or bottom: a compact "Next" checklist with three items.
+**Speaker notes** (~80 words, ~50 s): Personalising a model per user via fine-tuning doesn't scale. Each new user needs labelled data, VRAM, a training loop — and worse, updates mutate the shared base, so every tenant risks overwriting what worked for the last. Worse still, the alignment is baked into opaque weights you can't audit. The reframe: style is a retrieval problem, not a training problem. Author the style once as a card, index the bank once, compose at inference. No gradients leave the lab, the base never drifts, and adding a new style is one JSONL line.
 
 ---
 
-# Appendix — raw assets the deck-builder can draw from
+## Slide 3 — KRR approach **(50 s)**
 
-## A. Sample trace structure (schema)
-Every run persisted to `results/traces/trace_NN.json` has this shape:
-```json
-{
-  "query": "...",
-  "preference": "...",
-  "retrieval": [{ "rank": 0, "styleId": "...", "score": 0.72, "weight": 1.0 }],
-  "draft": "...",
-  "revisions": [{
-    "attempt": 0,
-    "styleId": "...",
-    "draft": "...",
-    "styled": "...",
-    "verdict": {
-      "styleScore": 4,
-      "contentFaithful": true,
-      "contentCosine": 0.86,
-      "action": "accept",
-      "rationale": "..."
-    }
-  }],
-  "finalStyleId": "...",
-  "finalOutput": "...",
-  "finalVerdict": { ... }
-}
-```
+**Layout.** Two columns. Headline across top. Left (col 1–6): style-card grid. Right (col 7–12): retrieval flow + inline JSON excerpt.
 
-## B. SSE event sequence (for demo-slide visual if needed)
-```
-event: retrieval          data: { rank:0, styleId, score, weight } × K
-event: draft_delta        data: { delta: "tok " }     (repeated)
-event: draft              data: { draft: "<full draft>" }
-event: style_attempt_start data: { attempt, styleId }
-event: style_delta        data: { attempt, delta: "tok " } (repeated)
-event: style_attempt      data: { attempt, styleId, styled: "<full>" }
-event: judge_verdict      data: { attempt, styleId, verdict: { action, ... } }
-...loop until accept / MAX_REVISIONS...
-event: final              data: { finalStyleId, finalOutput, finalVerdict }
-```
+**On-slide content**:
 
-## C. Slide → section map (for the agent's sanity check)
-| Slide | The "four things" this slide lands | Section of this file it draws from |
-|---|---|---|
-| 1 | — (title + team) | Front-matter `team` |
-| 2 | **Problem** | "Why not fine-tune" |
-| 3 | **KRR-based approach** | "The style bank" + "Architecture" |
-| 4 | **Reasoning process behind the method** | "The Knowledge/Style/Judge loop" + "Key design decisions" |
-| 5 | **Main insight, contribution, and results** | "Evaluation (last recorded run)" + "Honest caveats" |
-| 6 | — (demo + roadmap) | "Streaming + UI" + "Deployment" |
+- Chrome as defined.
+- Headline: `Style as a symbolic, retrievable module`
+- Sub-headline: `Eight cards today. Scales by one JSONL line.`
 
-## D. Visual-asset references (if the deck-builder wants to inline concrete snippets)
-- `style_bank/style_cards.jsonl` — 8 styles; one JSON line each. Use any card from §"The style bank" as an on-slide excerpt.
-- `results/traces/*.json` — per-request trace example, shape as in Appendix A. Good material for slide 5 "auditable triple".
-- `results/evaluation_results_3llm.json` — source for slide 5 numbers (pre-`rnj-1` Judge run).
-- `judge/agents/orchestrator.py:43–110` — the KSJ loop; use as a small code-snippet caption on slide 4 if the deck needs one.
-- Web UI screenshot (three-column Playground mid-stream) — slide 6.
-- HTML deck `Zero-Shot Alignment via Retrieval.html` — existing hand-coded deck; source for the two-panel problem diagram on slide 2.
+**Left column (col 1–6)** — 2×4 grid of style-card tiles, gap 16 px. Each tile: `--surface` fill, 1 px `--border`, 12 px radius, 20 px padding. Tile anatomy:
+- Line 1 (20 px, 600, `--primary`, mono): the id verbatim — `formal_academic` · `business_executive` · `technical_precise` · `storytelling_narrative` · `eli5_playful` · `hype_bro` · `gen_z_online` · `keywords_only`
+- Line 2 (16 px, 500, `--text`, lh 1.3, max 2 lines): the one-line flavour from §2.3 of this spec. Truncate with ellipsis if > 2 lines.
+
+**Right column (col 7–12)** — stacked:
+
+1. **Flow strip** at top, 200 px tall. Four horizontal nodes connected by 2 px `--muted` arrows with 8 px arrow-heads in `--primary`:
+   - Node A: speech-bubble icon + label `preference` (20 px, 500, `--text`)
+   - Node B: label `MiniLM embed` (20 px, 500, `--text`)
+   - Node C: cylinder icon + label `FAISS top-K` (20 px, 500, `--text`)
+   - Node D: card icon + label `selected card` in `--primary`, 20 px, 600
+   Arrows 1 px `--muted` line, arrowhead `--primary`. Nodes render as `--surface` pills with 1 px `--border`, 12 px radius.
+
+2. **JSON excerpt panel** below, `--surface` fill, 1 px `--border`, 16 px padding, 12 px radius. Mono 20 px, `--text`; keys in `--primary`; strings in `--text`. Syntax-colour the quotes in `--muted`:
+   ```
+   {
+     "id": "formal_academic",
+     "tags": ["formal", "academic", "scholarly"],
+     "instruction": "Use formal academic register. Prefer
+       Latinate vocabulary, subordinate clauses, and hedged
+       claims ('it may be argued that…').",
+     "examples": [
+       { "prompt": "Explain gradient descent.",
+         "answer": "Gradient descent is a first-order iterative
+           optimisation procedure…" }
+     ]
+   }
+   ```
+   Caption below (18 px, `--muted`): `encoded with all-MiniLM-L6-v2 into a FAISS IndexFlatIP (cosine via inner product on unit vectors).`
+
+**Speaker notes** (~80 words, ~50 s): The KRR framing. Each style is a small symbolic knowledge module — an id, tags, a natural-language instruction, and two exemplars. The library of modules is the bank; the user's preference is a query over that bank. Every card is encoded with all-MiniLM-L6-v2 and stored in a FAISS IndexFlatIP — cosine as inner product on unit-normalised embeddings. At query time we retrieve top-K and compose. Because style lives in data, not weights, the knowledge base is inspectable, editable, and extensible — properties fine-tuning cannot give you.
+
+---
+
+## Slide 4 — Reasoning: the KSJ loop **(80 s)**
+
+**Layout.** Title across top. Below: left bullet column (col 1–4), centre loop diagram (col 5–12). One chrome row at bottom.
+
+**On-slide content**:
+
+- Chrome as defined.
+- Headline: `Knowledge · Style · Judge — a bounded control loop`
+- Sub-headline: `Three role-specialised LLMs · four judge actions · two revisions max.`
+
+**Left column (col 1–4)** — bullet stack, 24 px Bullet / 500 / `--text`, with 6 px `--primary` square glyph:
+
+- **Knowledge** drafts facts — no style pressure.
+- **Style** rewrites — no factual pressure.
+- **Judge** scores on 1–5 rubric · threshold **5/5** to accept.
+- Judge runs a **different model family** (breaks self-preference, Zheng 2023).
+- Content cosine computed **locally** — independent of Judge's LLM.
+- `MAX_REVISIONS = 2` · best-so-far always emitted.
+
+(48 px below the bullets, small caption):
+Micro mono (14 px, `--muted`): `judge/agents/orchestrator.py : 43–110`
+
+**Right diagram (col 5–12)** — horizontal KSJ flow, vertically centred.
+
+Nodes are 160×80 `--surface` pills, 1 px `--border`, 16 px radius; 20 px, 600, `--text` label. Between each node, a 64 px horizontal arrow, 2 px `--muted` line, arrowhead `--primary`.
+
+Ordered left to right:
+1. `Preference` (pill)
+2. `FAISS top-K` (pill with `--primary` left-edge tick)
+3. `Knowledge` (pill) — small caption under: `neutral draft`
+4. `Style` (pill) — caption: `rewrite · card in prompt`
+5. `Judge` (pill) — caption: `style 1–5 · content cosine`
+6. `Final` (pill, `--primary` fill, `--bg` text)
+
+Below the Judge pill, a fan of four labelled return arrows, each 1.5 px:
+- `accept` → straight right to `Final` · stroke `--good`, label 18 px `--good` bold
+- `revise_style` → curves back up to `Style` · stroke `--warn`, label 18 px `--warn`
+- `content_drift` → curves back up to `Style` (slightly different curve) · stroke `--warn`, label 18 px `--warn`
+- `wrong_style` → long curve back to `FAISS top-K` (indicating "advance to next card") · stroke `--bad`, label 18 px `--bad`
+
+Above the Style→Judge arrow, a small dashed side-arrow from Style through a tiny `cosine(draft, styled)` pill back into Judge. Pill: `--surface`, 1 px `--muted` dashed border, 14 px mono, `--muted` text. Label next to it (14 px, `--muted` italic): `local · not LLM`
+
+Bottom of diagram, faint caption (14 px, `--muted`, centred):
+`best-so-far RevisionStep always emitted · trace persisted to results/traces/trace_NN.json`
+
+**Speaker notes** (~120 words, ~80 s): Why three LLMs and not one prompt. Knowledge drafts neutral facts — no style pressure. Style rewrites that draft using the retrieved card — no factual pressure. Judge evaluates the pair along two axes: is the style right on a 1-to-5 rubric, and is the content faithful — measured by a local sentence-transformers cosine, not the judge's own LLM call. The judge emits one of four actions. Accept exits. Revise_style re-tries the same card with a stronger hint and lower temperature. Content_drift does the same because the draft is still the source of truth. Wrong_style advances to the next retrieved card. Two design choices kill specific failure modes: running the judge on a different model family than Knowledge and Style prevents self-preference bias documented in Zheng et al. 2023, and computing the content cosine outside the judge's LLM catches hallucinations the judge missed. Revisions are capped at two; the best candidate is always emitted.
+
+---
+
+## Slide 5 — Insight + contribution + results **(70 s)**
+
+**Layout.** Top half: insight quote (full width). Bottom half: chart (left, col 1–7) + three stat cards (right, col 8–12).
+
+**On-slide content**:
+
+- Chrome as defined.
+- Headline: `Alignment as an auditable triple`
+- Sub-headline: `(card_id, content_cosine, judge_verdict) — for every single output.`
+
+**Top half — Insight panel** (full width, col 1–12, height ≈ 340 px, 64 px below sub-headline). `--surface` fill, **left border 4 px `--primary-2`** (the pull-quote accent), 24 px radius, 48 px padding. Inside:
+- 36 px, 500, `--text`, lh 1.3:
+  `Retrieval turns alignment into a discrete, auditable decision. A stakeholder can see exactly why an output looks the way it does — and exactly where to intervene when it's wrong.`
+- 16 px below, 18 px, `--muted`:
+  `Contrast with RLHF, where bias flows through opaque weight updates.`
+
+**Bottom-left (col 1–7) — Chart** at the full remaining height.
+- Chart type: vertical grouped bar, 2 groups (`3-LLM + retrieval`, `Ollama direct`).
+- Values: `13` and `7` (out of 20).
+- Bar widths: identical. Bar colors: `--primary` for `3-LLM + retrieval`, `--ref-bar` for `Ollama direct`.
+- Y-axis: 0–20, gridlines at 5/10/15/20 in 1 px `--border`. Tick labels 14 px `--muted`.
+- Y-axis title: `pairwise wins (n = 20)` — 14 px `--muted`.
+- Data labels on top of each bar: `13` and `7`, 28 px, 700, matching bar color (primary for 13, `--text` for 7).
+- Above chart: mini caption (18 px, `--muted`): `≈ 1.85× lift vs same Ollama model, no retrieval`
+- Below chart: source (14 px, `--muted`): `source: results/evaluation_results_3llm.json · pre-cross-family Judge`
+
+**Bottom-right (col 8–12) — Three stacked stat cards**, 16 px gap. Each card: `--surface` fill, 1 px `--border`, 12 px radius, 24 px padding. Card anatomy:
+- Card 1:
+  - 20 px, 500, `--muted`: `content cosine`
+  - 112 px, 700, `--primary`: `0.80`
+  - 18 px, `--muted`: `every item clears the 0.70 drift gate`
+- Card 2:
+  - 20 px, 500, `--muted`: `judge style score`
+  - 112 px, 700, `--primary`: `4.9 / 5`
+  - 18 px, `--muted`: `pre-cross-family (Judge swap tightens this)`
+- Card 3:
+  - 20 px, 500, `--muted`: `mean revisions`
+  - 112 px, 700, `--primary`: `0.05`
+  - 18 px, `--muted`: `loop rarely fired — fixed by cross-family Judge + 5/5 bar`
+
+**Speaker notes** (~110 words, ~70 s): The main insight and our contribution. Retrieval turns alignment into an auditable discrete decision. Every response traces back to a specific card, a specific content cosine, and a specific judge verdict. That triple is the contribution — a stakeholder can see exactly why an output looks the way it does, and exactly where to intervene when it's wrong. Contrast with RLHF, where bias flows through opaque weight updates. On twenty prompts against the same Ollama model without retrieval, we win thirteen — roughly 1.85-times. Content cosine averages 0.80, every item clears the 0.70 drift gate. Two honest caveats on this run: the judge rated generously because all three roles used the same model family, so the revision loop barely fired. Production now routes Judge to a different-family model and tightens the accept threshold to 5 out of 5. And retrieval still misses 5 of 20 — that caps the ceiling and is the first thing to fix.
+
+---
+
+## Slide 6 — Demo + what's next **(50 s)**
+
+**Layout.** Top half: large screenshot (full width, col 1–12, height ≈ 460 px). Bottom half: headline + three unlock cards (col 1–12, evenly split).
+
+**On-slide content**:
+
+- Chrome as defined.
+- Headline (above screenshot): `Live SSE trace · Dokploy-deployed · what's next`
+- Sub-headline: `Every step streams to the browser. Three concrete unlocks ahead.`
+
+**Upper half — Screenshot.** Place the hero screenshot of the three-column Playground mid-stream (source: `krr.msantoki.com` running a fresh query). Frame it in a `--surface` panel, 1 px `--border`, 12 px radius, 8 px padding around the image. Below the frame, 16 px caption (14 px, `--muted`):
+`Playground · three-column: form · retrieval + draft · attempts + verdicts. SSE streams retrieval, draft tokens, style tokens, judge verdicts, final.`
+
+**Lower half — Three unlock cards** in a 3-col horizontal flex (col 1–4, 5–8, 9–12). Each card: `--surface` fill, 1 px `--border`, 16 px radius, 28 px padding, min-height 220 px.
+
+- Card 1 — header line (18 px, 500, `--muted`): `01 · grow the bank`
+  - Body (24 px, 500, `--text`): `Add more styles — one JSONL line each, zero retraining.`
+  - Caption (16 px, `--muted`): `new user-type = new card · ingredient, not recipe`
+- Card 2 — header: `02 · judge-in-loop rerank`
+  - Body: `Fix the 5/20 retrieval misses by reranking top-K with the Judge.`
+  - Caption: `recover the ceiling our top-1 retrieval leaves on the table`
+- Card 3 — header: `03 · beyond cosine`
+  - Body: `Add NLI / fact-level content checks alongside the embedding cosine.`
+  - Caption: `catch hallucinations that look similar but claim new facts`
+
+**Footer strip** (below the three cards, 32 px above bottom chrome), 18 px, `--muted`, one line:
+`Shipped: Docker Compose · Traefik on Dokploy · krr.msantoki.com · stack: FastAPI · SSE · Next.js 16 · FAISS · Ollama`
+
+**Speaker notes** (~100 words, ~50 s): The web UI streams every step of the loop over Server-Sent Events — retrieval hits, draft tokens, each style attempt's tokens, each judge verdict, and the final output. Same trace format we persist offline, so one renderer works for both live streams and the history view. The full stack ships as Docker Compose and runs behind Traefik on a Dokploy deployment; the public UI is same-origin, SSE bypasses Next.js directly to the API so streams don't buffer. Three queued unlocks, each a one-knob change thanks to the retrieval frame: grow the style bank — one JSONL line per style, no retraining; fix the five retrieval misses with a judge-in-the-loop rerank over top-K; and extend content preservation beyond cosine with NLI or fact-level checks.
+
+---
+
+# §4 Asset checklist
+
+The deck-builder must pull / capture the following before producing the final file:
+
+| # | asset | where to get it | used on |
+|---|---|---|---|
+| A1 | Playground screenshot — mid-stream, three-column, dark theme | `https://krr.msantoki.com/` — run a fresh query (e.g. preference "genz style", query "How does RAM work?") and screenshot at 1920×1080 just as attempt 0 is mid-generation. Include one retrieval column, the draft column, and the attempt+final column. | Slide 6 |
+| A2 | Style-card JSON excerpt | Copy verbatim from §2.3 / §3 Slide 3 spec. No other source. | Slide 3 |
+| A3 | Architecture flow (KSJ loop) | Render from §3 Slide 4 spec — do NOT pull from `README.md`'s ASCII. | Slide 4 |
+| A4 | Problem two-panel diagram | Render from §3 Slide 2 spec. | Slide 2 |
+| A5 | Chart data | `13 / 20` vs `7 / 20`; gridline scale 0–20 in increments of 5. Source `results/evaluation_results_3llm.json`. | Slide 5 |
+| A6 | Stat numbers | `0.80`, `4.9 / 5`, `0.05`. Source same JSON. | Slide 5 |
+| A7 | Team names + ASU IDs | Front-matter at top of this file. | Slide 1 |
+
+# §5 Quality bar — self-check before delivery
+
+Before handing off the deck, confirm each of the following. If any fails, iterate:
+
+- [ ] Exactly 6 slides, 1920×1080.
+- [ ] All typography sizes from §1.3 used (no default PowerPoint sizes).
+- [ ] All colors from §1.2 used (no default PowerPoint palette).
+- [ ] Chrome present on slides 2–6, absent on slide 1.
+- [ ] Only numbers from §2.7 appear on Slide 5. No invented stats.
+- [ ] Style-card grid on Slide 3 lists the 8 ids in §2.3 order.
+- [ ] Judge action arrows on Slide 4 use the `--good` / `--warn` / `--bad` tokens as specified.
+- [ ] Slide 6 screenshot is dark-themed (matches deck) and shows three columns.
+- [ ] Speaker-note paragraph word-counts fall within ±15 % of the targets:
+  S1 ≈ 70 · S2 ≈ 80 · S3 ≈ 80 · S4 ≈ 120 · S5 ≈ 110 · S6 ≈ 100.
+- [ ] All five team members' names appear on Slide 1 in the front-matter order.
+- [ ] Total read time (all speaker notes at ~140 wpm) ≤ 345 s.
