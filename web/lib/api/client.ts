@@ -9,15 +9,21 @@ import type {
 /**
  * Base URL for API fetches.
  *
- * - Empty string (production / Docker): browser uses same-origin relative paths
- *   like `/api/health`, which Next.js rewrites to the internal api service.
- * - Absolute URL (local dev): browser hits the uvicorn server directly, e.g.
- *   http://localhost:8000. Set NEXT_PUBLIC_API_BASE in .env.local.
+ * Server components (SSR) run in Node and need an absolute URL; the browser
+ * can use a relative path that resolves to same-origin. Resolve both here so
+ * a single `api.*` call works from either context.
  *
- * `??` (nullish coalesce) only fires for undefined — an explicitly empty string
- * from the build env is preserved.
+ * - Server: API_UPSTREAM (e.g. http://api:8000 inside the compose network).
+ * - Browser, prod: empty → same-origin `/api/...` served by Traefik/Next.js.
+ * - Browser, local dev: NEXT_PUBLIC_API_BASE=http://localhost:8000.
+ *
+ * `??` (nullish coalesce) only fires for undefined, preserving intentional
+ * empty strings passed through at build time.
  */
-const BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+const BASE =
+  typeof window === "undefined"
+    ? process.env.API_UPSTREAM ?? "http://localhost:8000"
+    : process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
 export class ApiError extends Error {
   status: number;
