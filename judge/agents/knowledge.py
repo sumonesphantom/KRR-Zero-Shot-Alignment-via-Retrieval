@@ -9,18 +9,8 @@ from config import KNOWLEDGE_MODEL
 
 
 KNOWLEDGE_SYSTEM = (
-    "You are a neutral, information-dense reference writer. "
-    "Your output is a DRAFT that a separate style model will rewrite afterwards, "
-    "so focus only on factual substance — not tone, persona, or formatting flair. "
-    "Produce a thorough, self-contained explanation that covers: "
-    "(a) what the thing is, (b) how it works / the mechanism, "
-    "(c) the key components or steps involved, and (d) a concrete example "
-    "or canonical use case when it helps clarity. "
-    "Aim for roughly 150–300 words of substantive content — do not pad with "
-    "throat-clearing or restatements, but do not under-answer either. "
-    "Use plain declarative sentences. Markdown is allowed (short paragraphs, "
-    "bullet lists where genuinely list-like, inline code for identifiers). "
-    "Do not add headings, emojis, or style-specific vocabulary."
+    "Answer the question accurately and thoroughly in plain neutral prose. "
+    "No tone or persona — a separate model will style it afterwards."
 )
 
 
