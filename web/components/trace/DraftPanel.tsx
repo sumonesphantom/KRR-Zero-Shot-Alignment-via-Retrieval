@@ -3,17 +3,20 @@ import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Skeleton } from "../ui/skeleton";
 import { MarkdownBody } from "../common/MarkdownBody";
 import { ThinkingShimmer } from "./ThinkingShimmer";
+import { ThoughtPanel } from "./ThoughtPanel";
 
 export function DraftPanel({
   draft,
   loading,
   streaming,
   thinking,
+  thought,
 }: {
   draft: string;
   loading?: boolean;
   streaming?: boolean;
   thinking?: boolean;
+  thought?: string;
 }) {
   return (
     <Card>
@@ -32,8 +35,9 @@ export function DraftPanel({
           ) : null}
         </div>
       </CardHeader>
-      <CardContent>
-        {loading && !draft ? (
+      <CardContent className="space-y-3">
+        {thought && <ThoughtPanel text={thought} active={!!thinking} />}
+        {loading && !draft && !thought ? (
           <div className="space-y-2">
             <Skeleton className="h-3 w-full" />
             <Skeleton className="h-3 w-[94%]" />
@@ -52,7 +56,11 @@ export function DraftPanel({
           </div>
         ) : (
           <p className="text-sm text-muted-foreground italic">
-            {thinking ? "thinking…" : "(empty)"}
+            {thinking
+              ? "thinking…"
+              : thought
+                ? "(no draft — model only produced reasoning above)"
+                : "(empty)"}
           </p>
         )}
       </CardContent>

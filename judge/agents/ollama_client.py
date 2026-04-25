@@ -77,10 +77,15 @@ class _ThinkFilter:
 
     _MAX_HOLD = max(len(_THINK_OPEN), len(_THINK_CLOSE)) - 1
 
-    def __init__(self, on_state: Optional[Callable[[bool], None]] = None) -> None:
+    def __init__(
+        self,
+        on_state: Optional[Callable[[bool], None]] = None,
+        on_thought: Optional[Callable[[str], None]] = None,
+    ) -> None:
         self._in_think = False
         self._buf = ""
         self._on_state = on_state
+        self._on_thought = on_thought
         self._last_reported = False
 
     def _notify(self, in_think: bool) -> None:
@@ -92,6 +97,14 @@ class _ThinkFilter:
         except Exception as e:
             print(f"[ollama_client] on_state raised: {e!r}")
 
+    def _emit_thought(self, text: str) -> None:
+        if not text or self._on_thought is None:
+            return
+        try:
+            self._on_thought(text)
+        except Exception as e:
+            print(f"[ollama_client] on_thought raised: {e!r}")
+
     def feed(self, chunk: str) -> str:
         if not chunk:
             return ""
@@ -101,11 +114,18 @@ class _ThinkFilter:
             if self._in_think:
                 i = self._buf.find(_THINK_CLOSE)
                 if i == -1:
-                    # Still inside think block; drop buffer but hold a small
-                    # tail in case the close tag is splitting.
+                    # Still inside think block; emit everything that's safe
+                    # to flush as thought text (everything but a possible
+                    # split-tag tail), and hold the tail in the buffer.
                     hold = min(len(self._buf), self._MAX_HOLD)
+                    if hold == len(self._buf):
+                        # Whole buffer might be the start of </think> — wait.
+                        break
+                    self._emit_thought(self._buf[:-hold] if hold else self._buf)
                     self._buf = self._buf[-hold:] if hold else ""
                     break
+                # Found close tag — emit the rest of the thought, then exit.
+                self._emit_thought(self._buf[:i])
                 self._buf = self._buf[i + len(_THINK_CLOSE):]
                 self._in_think = False
                 self._notify(False)
@@ -149,7 +169,8 @@ class OllamaClient:
     def _chat(self, user_content: str, temperature: float, top_p: float,
               max_new_tokens: int, stop: list[str] | None,
               on_chunk: Optional[Callable[[str], None]] = None,
-              on_thinking: Optional[Callable[[bool], None]] = None) -> str:
+              on_thinking: Optional[Callable[[bool], None]] = None,
+              on_thought: Optional[Callable[[str], None]] = None) -> str:
         options = {
             "temperature": max(temperature, MIN_TEMPERATURE),
             "top_p": top_p,
@@ -178,10 +199,21 @@ class OllamaClient:
 
         # Streaming path — yield chunks to the callback; accumulate for retries.
         # The filter never emits tokens inside a <think> block to the UI, but
-        # notifies `on_thinking` so the UI can show a shimmer while gated.
+        # notifies `on_thinking` so the UI can show a shimmer while gated, and
+        # streams the thought content via `on_thought` so the UI can show
+        # what the model was deliberating about.
         acc: list[str] = []
         thinking_acc: list[str] = []
-        filt = _ThinkFilter(on_state=on_thinking)
+
+        def _capture_thought(text: str) -> None:
+            thinking_acc.append(text)
+            if on_thought is not None:
+                try:
+                    on_thought(text)
+                except Exception as e:
+                    print(f"[ollama_client] on_thought raised: {e!r}")
+
+        filt = _ThinkFilter(on_state=on_thinking, on_thought=_capture_thought)
         try:
             stream = self.client.chat(
                 model=self.model,
@@ -204,9 +236,17 @@ class OllamaClient:
                         except Exception as e:
                             print(f"[ollama_client] on_chunk raised: {e!r}")
                 # Some builds route early output to `thinking` even with think=False.
+                # Surface it through the same on_thought callback so the UI can
+                # render whichever channel the model uses.
                 th = (msg.get("thinking") if isinstance(msg, dict) else getattr(msg, "thinking", None)) or ""
                 if th:
-                    thinking_acc.append(th)
+                    if on_thinking is not None and not filt._last_reported:
+                        try:
+                            on_thinking(True)
+                            filt._last_reported = True
+                        except Exception as e:
+                            print(f"[ollama_client] on_thinking raised: {e!r}")
+                    _capture_thought(th)
             tail = filt.flush()
             if tail:
                 acc.append(tail)
@@ -227,14 +267,15 @@ class OllamaClient:
                  max_new_tokens: int = MAX_NEW_TOKENS,
                  stop: list[str] | None = None,
                  on_chunk: Optional[Callable[[str], None]] = None,
-                 on_thinking: Optional[Callable[[bool], None]] = None) -> str:
+                 on_thinking: Optional[Callable[[bool], None]] = None,
+                 on_thought: Optional[Callable[[str], None]] = None) -> str:
         """Generate a completion. If `on_chunk` is provided, streams tokens
         through the callback as they arrive; returns the full text either way.
         """
         user_content = f"{system}\n\n{prompt}" if system else prompt
 
         out = self._chat(user_content, temperature, top_p, max_new_tokens, stop,
-                         on_chunk, on_thinking)
+                         on_chunk, on_thinking, on_thought)
         if out:
             return out
 
@@ -243,7 +284,7 @@ class OllamaClient:
         # nothing, we don't want to re-stream an empty to the UI.
         retry_temp = max(temperature + 0.1, 0.2)
         out = self._chat(user_content, retry_temp, top_p, max_new_tokens, stop,
-                         None, None)
+                         None, None, None)
         if not out:
             print(f"[ollama_client] WARNING: empty response from model={self.model} "
                   f"after retry (prompt len={len(user_content)} chars)")

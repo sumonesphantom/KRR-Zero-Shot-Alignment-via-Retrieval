@@ -58,7 +58,8 @@ class StyleLLM:
         self.client = client or OllamaClient(STYLE_MODEL)
 
     def restyle(self, draft: str, style_card: dict, preference: str,
-                attempt: int = 0, on_chunk=None, on_thinking=None) -> str:
+                attempt: int = 0, on_chunk=None, on_thinking=None,
+                on_thought=None) -> str:
         if attempt == 0:
             hint, temperature = "", 0.7
         elif attempt == 1:
@@ -81,4 +82,5 @@ class StyleLLM:
             temperature=temperature,
             on_chunk=on_chunk,
             on_thinking=on_thinking,
+            on_thought=on_thought,
         )

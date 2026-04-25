@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Skeleton } from "../ui/skeleton";
 import { ActionBadge } from "./ActionBadge";
 import { ThinkingShimmer } from "./ThinkingShimmer";
+import { ThoughtPanel } from "./ThoughtPanel";
 import { CosineBadge, StyleScoreBadge } from "./VerdictBadge";
 import { MarkdownBody } from "../common/MarkdownBody";
 import type { RevisionStep } from "../../lib/api/types";
@@ -23,12 +24,14 @@ export function RevisionCard({
   awaitingStyled,
   streaming,
   thinking,
+  thought,
 }: {
   step: RevisionStep;
   awaitingVerdict: boolean;
   awaitingStyled?: boolean;
   streaming?: boolean;
   thinking?: boolean;
+  thought?: string;
 }) {
   return (
     <Card>
@@ -56,6 +59,7 @@ export function RevisionCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
+        {thought && <ThoughtPanel text={thought} active={!!thinking} />}
         <div>
           <div className="mb-1 text-xs font-medium text-muted-foreground">
             Styled output

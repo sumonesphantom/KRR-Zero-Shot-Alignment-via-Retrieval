@@ -99,6 +99,7 @@ export interface HealthResponse {
 export type SseEvent =
   | { type: "retrieval"; retrieval: RetrievalHit[] }
   | { type: "draft_thinking"; thinking: boolean }
+  | { type: "draft_thought_delta"; delta: string }
   | { type: "draft_delta"; delta: string }
   | { type: "draft"; draft: string }
   | {
@@ -112,6 +113,12 @@ export type SseEvent =
       attempt: number;
       styleId: string;
       thinking: boolean;
+    }
+  | {
+      type: "style_thought_delta";
+      attempt: number;
+      styleId: string;
+      delta: string;
     }
   | {
       type: "style_delta";

@@ -28,11 +28,13 @@ class KnowledgeLLM:
     def __init__(self, client: OllamaClient | None = None):
         self.client = client or OllamaClient(KNOWLEDGE_MODEL)
 
-    def draft(self, query: str, on_chunk=None, on_thinking=None) -> str:
+    def draft(self, query: str, on_chunk=None, on_thinking=None,
+              on_thought=None) -> str:
         return self.client.generate(
             prompt=f"Question: {query}\n\nAnswer:",
             system=KNOWLEDGE_SYSTEM,
             temperature=0.5,
             on_chunk=on_chunk,
             on_thinking=on_thinking,
+            on_thought=on_thought,
         )

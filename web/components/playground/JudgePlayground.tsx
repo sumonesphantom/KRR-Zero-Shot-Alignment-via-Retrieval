@@ -83,7 +83,9 @@ export function JudgePlayground() {
               selectedStyleId={selectedStyleId}
               live={judge.status === "streaming"}
             />
-            {(hasDraft || judge.status === "streaming") && (
+            {(hasDraft ||
+              judge.status === "streaming" ||
+              !!judge.draftThought) && (
               <DraftPanel
                 draft={trace.draft}
                 loading={judge.status === "streaming" && !hasDraft}
@@ -93,6 +95,7 @@ export function JudgePlayground() {
                   trace.revisions.length === 0
                 }
                 thinking={judge.status === "streaming" && judge.draftThinking}
+                thought={judge.draftThought}
               />
             )}
           </>
@@ -113,6 +116,7 @@ export function JudgePlayground() {
               mode={judge.status === "done" ? "static" : "live"}
               activeAttempt={judge.activeAttempt}
               styleThinking={judge.styleThinking}
+              styleThought={judge.styleThought}
               emptyPlaceholder={
                 judge.status === "streaming" ? (
                   <EmptyState

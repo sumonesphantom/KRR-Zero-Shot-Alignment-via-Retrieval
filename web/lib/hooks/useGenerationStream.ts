@@ -28,6 +28,12 @@ interface State {
   // UI to show a shimmer while the model is in that gated phase.
   draftThinking: boolean;
   styleThinking: Record<number, boolean>;
+  // Streamed chain-of-thought captured from inside <think>…</think>. Surfaced
+  // to the UI in a collapsible block so users can see what the model is
+  // deliberating about — and notice when a thinking model puts the entire
+  // answer inside the think block (which previously left the draft empty).
+  draftThought: string;
+  styleThought: Record<number, string>;
   error: string | null;
   errorCode: string | null;
   request: GenerateRequest | null;
@@ -46,6 +52,8 @@ const initial: State = {
   activeAttempt: null,
   draftThinking: false,
   styleThinking: {},
+  draftThought: "",
+  styleThought: {},
   error: null,
   errorCode: null,
   request: null,
@@ -73,6 +81,8 @@ function reducer(state: State, action: Action): State {
         activeAttempt: null,
         draftThinking: false,
         styleThinking: {},
+        draftThought: "",
+        styleThought: {},
         error: null,
         errorCode: null,
         request: action.req,
@@ -115,6 +125,8 @@ function reducer(state: State, action: Action): State {
           return { ...state, trace: t };
         case "draft_thinking":
           return { ...state, draftThinking: ev.thinking };
+        case "draft_thought_delta":
+          return { ...state, draftThought: state.draftThought + ev.delta };
         case "draft_delta":
           // Append streaming token to the draft being composed.
           t.draft = (t.draft ?? "") + ev.delta;
@@ -151,6 +163,14 @@ function reducer(state: State, action: Action): State {
           return {
             ...state,
             styleThinking: { ...state.styleThinking, [ev.attempt]: ev.thinking },
+          };
+        case "style_thought_delta":
+          return {
+            ...state,
+            styleThought: {
+              ...state.styleThought,
+              [ev.attempt]: (state.styleThought[ev.attempt] ?? "") + ev.delta,
+            },
           };
         case "style_delta": {
           // Immutable update — never mutate the existing revision object, or
@@ -291,6 +311,8 @@ export function useGenerationStream() {
     activeAttempt: state.activeAttempt,
     draftThinking: state.draftThinking,
     styleThinking: state.styleThinking,
+    draftThought: state.draftThought,
+    styleThought: state.styleThought,
     error: state.error,
     errorCode: state.errorCode,
     start,
