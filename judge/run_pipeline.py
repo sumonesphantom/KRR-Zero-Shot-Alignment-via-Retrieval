@@ -1,16 +1,10 @@
 #!/usr/bin/env python3
 """3-LLM pipeline entry point (Knowledge / Style / Judge).
 
-This pipeline assumes the FAISS index and LoRA adapters already exist — they
-are built by the single-LLM pipeline in ../previous. Run those steps first:
+Build the FAISS index once (`python scripts/build_index.py`), then:
 
-    python previous/run_pipeline.py --step index
-    python previous/run_pipeline.py --step train
-
-Then:
-
-    python judge/run_pipeline.py --step evaluate   # 3-LLM evaluation
-    python judge/run_pipeline.py --step demo       # interactive demo
+    python judge/run_pipeline.py --step evaluate   # 20-prompt eval
+    python judge/run_pipeline.py --step demo       # interactive REPL
 """
 
 import sys
